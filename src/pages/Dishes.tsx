@@ -204,23 +204,29 @@ export default function Dishes() {
   }, [data?.meta.last_page]);
 
   // ---------- DnD ----------
-  const onDragEnd = async (e: DragEndEvent) => {
-    const { active, over } = e;
-    if (!over || active.id === over.id) return;
+const onDragEnd = async (e: DragEndEvent) => {
+  const { active, over } = e;
+  if (!over || active.id === over.id) return;
 
-    const list = [...rows];
-    const oldIndex = list.findIndex(i => i.id === active.id);
-    const newIndex = list.findIndex(i => i.id === over.id);
-    if (oldIndex === -1 || newIndex === -1) return;
+  const list = [...rows];
+  const oldIndex = list.findIndex(i => i.id === active.id);
+  const newIndex = list.findIndex(i => i.id === over.id);
+  if (oldIndex === -1 || newIndex === -1) return;
 
-    const reordered = arrayMove(list, oldIndex, newIndex);
-    setRows(reordered); // optimistic
+  const reordered = arrayMove(list, oldIndex, newIndex);
+  setRows(reordered); // optimistic
 
-    await toast.promise(
-      api.post("/dishes/reorder", { ids: reordered.map(i => i.id) }),
-      { loading: "Записвам подредбата…", success: "Редът е записан", error: "Грешка при запис на реда" }
-    );
-  };
+  await toast.promise(
+    api.post("/dishes/reorder", {
+      ids: reordered.map(i => i.id),
+      category_id: query.category_id ?? undefined, // 👈 ВАЖНО
+    }),
+    { loading: "Записвам подредбата…", success: "Редът е записан", error: "Грешка при запис на реда" }
+  );
+
+  // За да видиш промяната (при сорт по position):
+  load(1); // 👈 върни се на стр. 1
+};
 
   return (
     <div className="space-y-6">
