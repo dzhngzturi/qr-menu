@@ -3,19 +3,22 @@
     {
       "source": "/menu/avva",
       "has": [{ "type": "host", "value": "qr-menu-sepia.vercel.app" }],
-      "destination": "https://avvakafe.com",
+      "destination": "https://avvakaffe.com",
       "permanent": true
     },
     {
       "source": "/menu/avva/",
       "has": [{ "type": "host", "value": "qr-menu-sepia.vercel.app" }],
-      "destination": "https://avvakafe.com",
+      "destination": "https://avvakaffe.com",
       "permanent": true
-    }
+    },
+
+    { "source": "/", "has": [{ "type": "host", "value": "avvakafe.com" }], "destination": "https://avvakaffe.com", "permanent": true },
+    { "source": "/", "has": [{ "type": "host", "value": "www.avvakafe.com" }], "destination": "https://www.avvakaffe.com", "permanent": true }
   ],
   "rewrites": [
-    { "source": "/", "has": [{ "type": "host", "value": "avvakafe.com" }], "destination": "/menu/avva?tab=food" },
-    { "source": "/", "has": [{ "type": "host", "value": "www.avvakafe.com" }], "destination": "/menu/avva?tab=food" },
+    { "source": "/", "has": [{ "type": "host", "value": "avvakaffe.com" }], "destination": "/menu/avva?tab=food" },
+    { "source": "/", "has": [{ "type": "host", "value": "www.avvakaffe.com" }], "destination": "/menu/avva?tab=food" },
 
     { "source": "/(.*)", "destination": "/index.html" }
   ]
