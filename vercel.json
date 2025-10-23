@@ -1,6 +1,19 @@
 {
   "redirects": [
     {
+      "source": "/login",
+      "has": [{ "type": "host", "value": "avvakaffe.com" }],
+      "destination": "https://qr-menu-sepia.vercel.app/login",
+      "permanent": true
+    },
+    {
+      "source": "/login",
+      "has": [{ "type": "host", "value": "www.avvakaffe.com" }],
+      "destination": "https://qr-menu-sepia.vercel.app/login",
+      "permanent": true
+    },
+
+    {
       "source": "/",
       "has": [{ "type": "host", "value": "avvakaffe.com" }],
       "destination": "/menu/avva?tab=food",
@@ -13,6 +26,7 @@
       "permanent": true
     }
   ],
+
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ]
