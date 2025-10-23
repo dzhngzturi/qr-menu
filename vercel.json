@@ -1,3 +1,9 @@
 {
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "redirects": [
+    {
+      "source": "/menu/avva",
+      "destination": "https://avvakafe.com",
+      "permanent": true
+    }
+  ]
 }
