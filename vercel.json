@@ -1,7 +1,10 @@
 {
   "redirects": [
     { "source": "/menu/avva",  "destination": "https://avvakafe.com", "permanent": true },
-    { "source": "/menu/avva/", "destination": "https://avvakafe.com", "permanent": true }
+    { "source": "/menu/avva/", "destination": "https://avvakafe.com", "permanent": true },
+
+    { "source": "/", "has": [{ "type": "host", "value": "avvakafe.com" }], "destination": "/menu/avva?tab=food", "permanent": false },
+    { "source": "/", "has": [{ "type": "host", "value": "www.avvakafe.com" }], "destination": "/menu/avva?tab=food", "permanent": false }
   ],
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
