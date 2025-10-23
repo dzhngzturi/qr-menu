@@ -42,10 +42,11 @@ export default function AvvaMenu() {
     name: "AVVA Cafe-Grill-Bar",
     coverUrl: "/avva.png",
     logoUrl: "",
-    address: "бул. „Пример“ 1, София",
-    phone: "088 000 0000",
-    phoneTel: "+359880000000",
+    address: "ул. Лудогорие 11, 7400 гр. Исперих",
+    phone: "089 200 1006",
+    phoneTel: "+359892001006",
     color: { primary: "#161616", accent: "#FFC107", soft: "#f5f5f5" },
+    instagramUrl: "https://www.instagram.com/avva_cafe_bar_grill",
   };
 
   function mapsUrl(addr: string) {
@@ -74,7 +75,7 @@ export default function AvvaMenu() {
       try {
         const [cRes, dRes] = await Promise.all([
           api.get("/categories?only_active=1&sort=position,name&per_page=-1"),
-          api.get("/dishes?only_active=1&sort=position,name&per_page=-1"),        ]);
+          api.get("/dishes?only_active=1&sort=position,name&per_page=-1"),]);
 
         const catsData: Category[] = cRes.data.data ?? cRes.data;
         const dishesData: Dish[] = (dRes.data.data ?? dRes.data).filter((d: Dish) => d.is_active);
@@ -115,8 +116,8 @@ export default function AvvaMenu() {
   const isBarCategory = (name: string) => {
     const n = name.toLowerCase();
     const keys = [
-      "drink", "drinks", "bar", "beer", "wine", "cocktail", "coffee", "tea", "alcohol", "spirit", "fresh", "milkshakes", "whiskey", "cognac", "jin", "vodka","extras",
-      "напит", "бар", "бира", "вино", "коктейл", "кафе", "чай", "алкохол", "ракия", "фрешове", "шейкове", "уиски", "коняк", "джин", "водка","екстри"
+      "drink", "drinks", "bar", "beer", "wine", "cocktail", "coffee", "tea", "alcohol", "spirit", "fresh", "milkshakes", "whiskey", "cognac", "jin", "vodka", "extras",
+      "напит", "бар", "бира", "вино", "коктейл", "кафе", "чай", "алкохол", "ракия", "фрешове", "шейкове", "уиски", "коняк", "джин", "водка", "екстри"
     ];
     return keys.some((k) => n.includes(k));
   };
@@ -203,13 +204,40 @@ export default function AvvaMenu() {
           </div>
 
           <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-neutral-600">
-            <a href={mapsUrl(BRAND.address)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 hover:underline">
+            <a
+              href={mapsUrl(BRAND.address)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 hover:underline"
+            >
               <span>📍</span>{BRAND.address}
             </a>
-            <a href={`tel:${BRAND.phoneTel}`} className="inline-flex items-center gap-1 hover:underline">
+
+            <a
+              href={`tel:${BRAND.phoneTel}`}
+              className="inline-flex items-center gap-1 hover:underline"
+            >
               <span>📞</span>{BRAND.phone}
             </a>
+
+            {BRAND.instagramUrl && (
+              <a
+                href={BRAND.instagramUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-full border border-black px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 transition"
+                aria-label="Instagram"
+                title="Instagram"
+              >
+                {/* Instagram SVG */}
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M7 2h10a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5zm10 2H7a3 3 0 0 0-3 3v10a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3V7a3 3 0 0 0-3-3zm-5 3a6 6 0 1 1 0 12 6 6 0 0 1 0-12zm0 2.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6zM18.25 6a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0z" />
+                </svg>
+                <span className="font-medium">Instagram</span>
+              </a>
+            )}
           </div>
+
 
           {/* PILLS */}
           <div className="mt-3 sm:mt-4 flex gap-2 flex-wrap">
