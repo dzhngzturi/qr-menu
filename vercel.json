@@ -4,6 +4,11 @@
       "source": "/menu/avva",
       "destination": "https://avvakafe.com",
       "permanent": true
+    },
+    {
+      "source": "/menu/avva/",
+      "destination": "https://avvakafe.com",
+      "permanent": true
     }
   ]
 }
