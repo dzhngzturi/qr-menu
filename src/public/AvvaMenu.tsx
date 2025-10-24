@@ -46,7 +46,12 @@ export default function AvvaMenu() {
     phone: "089 200 1006",
     phoneTel: "+359892001006",
     color: { primary: "#161616", accent: "#FFC107", soft: "#f5f5f5" },
-    instagramUrl: "https://www.instagram.com/avva_cafe_bar_grill",
+  };
+
+  const SOCIAL = {
+    instagram: "https://www.instagram.com/avva_cafe_bar_grill", // ако имаш точен профил – смени тук
+    facebook:
+      "https://www.facebook.com/AVVAKaffeGrillBarOrginaL?mibextid=wwXIfr&rdid=cPr6pnP25u9ZDAxF&share_url=https%3A%2F%2Fwww.facebook.com%2Fshare%2F1JqS4D4AAo%2F%3Fmibextid%3DwwXIfr",
   };
 
   function mapsUrl(addr: string) {
@@ -220,22 +225,42 @@ export default function AvvaMenu() {
               <span>📞</span>{BRAND.phone}
             </a>
 
-            {BRAND.instagramUrl && (
-              <a
-                href={BRAND.instagramUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 rounded-full border border-black px-3 py-1.5 bg-neutral-100 hover:bg-neutral-200 transition"
-                aria-label="Instagram"
-                title="Instagram"
-              >
-                {/* Instagram SVG */}
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                  <path d="M7 2h10a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5zm10 2H7a3 3 0 0 0-3 3v10a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3V7a3 3 0 0 0-3-3zm-5 3a6 6 0 1 1 0 12 6 6 0 0 1 0-12zm0 2.2a3.8 3.8 0 1 0 0 7.6 3.8 3.8 0 0 0 0-7.6zM18.25 6a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0z" />
-                </svg>
-                <span className="font-medium">Instagram</span>
-              </a>
-            )}
+            <div className="flex items-center gap-2">
+              {/* Facebook */}
+              {SOCIAL.facebook && (
+                <a
+                  href={SOCIAL.facebook}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm bg-neutral-100 text-black border border-black hover:bg-neutral-200 transition"
+                  aria-label="Facebook"
+                  title="Facebook"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M22 12.06C22 6.477 17.523 2 11.94 2 6.356 2 1.88 6.477 1.88 12.06c0 5.018 3.66 9.177 8.44 9.94v-7.03H7.99v-2.91h2.33v-2.22c0-2.3 1.367-3.57 3.462-3.57.997 0 2.04.178 2.04.178v2.25h-1.149c-1.133 0-1.487.703-1.487 1.423v1.94h2.533l-.404 2.91h-2.129V22c4.78-.763 8.44-4.922 8.44-9.94Z" />
+                  </svg>
+                  <span className="font-medium">Facebook</span>
+                </a>
+              )}
+
+              {/* Instagram */}
+              {SOCIAL.instagram && (
+                <a
+                  href={SOCIAL.instagram}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm bg-neutral-100 text-black border border-black hover:bg-neutral-200 transition"
+                  aria-label="Instagram"
+                  title="Instagram"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M7 2h10a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5Zm0 2a3 3 0 0 0-3 3v10a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3V7a3 3 0 0 0-3-3H7Zm5 3.5A5.5 5.5 0 1 1 6.5 13 5.51 5.51 0 0 1 12 7.5Zm0 2A3.5 3.5 0 1 0 15.5 13 3.5 3.5 0 0 0 12 9.5Zm5.75-3.25a1.25 1.25 0 1 1-1.25 1.25 1.25 1.25 0 0 1 1.25-1.25Z" />
+                  </svg>
+                  <span className="font-medium">Instagram</span>
+                </a>
+              )}
+            </div>
+
           </div>
 
 
