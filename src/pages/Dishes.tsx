@@ -39,10 +39,12 @@ function SortableRow({
   d,
   onEdit,
   onDelete,
+  disableAll,
 }: {
   d: Dish;
   onEdit: (d: Dish) => void;
   onDelete: (id: number, name: string) => void;
+  disableAll: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: d.id });
   const style: React.CSSProperties = {
@@ -53,7 +55,11 @@ function SortableRow({
 
   return (
     <tr ref={setNodeRef} style={style} className="border-t bg-white">
-      <td className="p-2 w-8 cursor-grab select-none text-gray-500" title="Влачѝ" {...attributes} {...listeners}>
+      <td
+        className={`p-2 w-8 select-none text-gray-500 ${disableAll ? "cursor-not-allowed opacity-60" : "cursor-grab"}`}
+        title={disableAll ? "Заето..." : "Влачѝ"}
+        {...(!disableAll ? { ...attributes, ...listeners } : {})}
+      >
         ⋮⋮
       </td>
       <td className="p-2 text-[16px]">{d.name}</td>
@@ -67,8 +73,20 @@ function SortableRow({
       </td>
       <td className="p-2 text-center text-[16px]">{d.is_active ? "✓" : "—"}</td>
       <td className="p-2 text-right">
-        <button className="px-2 py-1 border rounded mr-2" onClick={() => onEdit(d)}>Редакция</button>
-        <button className="px-2 py-1 border rounded" onClick={() => onDelete(d.id, d.name)}>Изтрий</button>
+        <button
+          className={`px-2 py-1 border rounded mr-2 ${disableAll ? "opacity-60 cursor-not-allowed" : ""}`}
+          disabled={disableAll}
+          onClick={() => onEdit(d)}
+        >
+          Редакция
+        </button>
+        <button
+          className={`px-2 py-1 border rounded ${disableAll ? "opacity-60 cursor-not-allowed" : ""}`}
+          disabled={disableAll}
+          onClick={() => onDelete(d.id, d.name)}
+        >
+          Изтрий
+        </button>
       </td>
     </tr>
   );
@@ -80,6 +98,7 @@ export default function Dishes() {
   const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState<{ page: number; category_id?: number; search?: string }>({ page: 1 });
   const [editing, setEditing] = useState<Dish | null>(null);
+  const [uiBusy, setUiBusy] = useState(false); // 👈 глобален lock
   const confirm = useConfirm();
 
   // dnd sensors
@@ -91,10 +110,20 @@ export default function Dishes() {
   // локален списък за оптимистично пренареждане
   const [rows, setRows] = useState<Dish[]>([]);
 
-  const { register, handleSubmit, reset, watch, resetField } = useForm<FormVals>({
+  const {
+    register,
+    handleSubmit,
+    reset,
+    watch,
+    resetField,
+    formState: { isSubmitting, isValid, isDirty, errors },
+  } = useForm<FormVals>({
+    mode: "onChange",
     defaultValues: { name: "", price: 0, is_active: true, category_id: 0, description: "" },
   });
   const watchPrice = watch("price");
+
+  const disableAll = uiBusy || isSubmitting; // общ флаг за бутони
 
   async function load(page = 1) {
     setLoading(true);
@@ -117,7 +146,10 @@ export default function Dishes() {
     }
   }
 
-  useEffect(() => { load(query.page); /* eslint-disable-next-line */ }, [query.page, query.category_id, query.search]);
+  useEffect(() => {
+    load(query.page);
+    // eslint-disable-next-line
+  }, [query.page, query.category_id, query.search]);
 
   const onEdit = (d: Dish) => {
     setEditing(d);
@@ -145,35 +177,51 @@ export default function Dishes() {
     if (v.image?.[0]) form.append("image", v.image[0]);
     if (removeImage) form.append("remove_image", "1"); // бекенд да нулира снимката
 
-    await toast.promise(
-      v.id ? api.post(`/dishes/${v.id}?_method=PATCH`, form) : api.post("/dishes", form),
-      {
-        loading: v.id ? "Записвам промените..." : "Създавам ястие...",
-        success: v.id ? "Ястието е обновено" : "Ястието е създадено",
-        error: "Грешка при запис",
-      }
-    );
-
-    setEditing(null);
-    reset({ name: "", price: 0, is_active: true, category_id: 0, description: "" });
-    clearPreview(false);
-    load(query.page);
+    try {
+      setUiBusy(true);
+      await toast.promise(
+        v.id ? api.post(`/dishes/${v.id}?_method=PATCH`, form) : api.post("/dishes", form),
+        {
+          loading: v.id ? "Записвам промените..." : "Създавам ястие...",
+          success: v.id ? "Ястието е обновено" : "Ястието е създадено",
+          error: "Грешка при запис",
+        }
+      );
+      setEditing(null);
+      reset({ name: "", price: 0, is_active: true, category_id: 0, description: "" });
+      clearPreview(false);
+      load(query.page);
+    } finally {
+      setUiBusy(false);
+    }
   };
 
   const onDelete = async (id: number, name: string) => {
     const ok = await confirm({
       title: "Изтриване на ястие",
-      message: <>Сигурни ли сте, че искате да изтриете <b>{name}</b>?<br />Действието е необратимо.</>,
+      message: (
+        <>
+          Сигурни ли сте, че искате да изтриете <b>{name}</b>?<br />
+          Действието е необратимо.
+        </>
+      ),
       confirmText: "Изтрий",
       cancelText: "Откажи",
       danger: true,
     });
     if (!ok) return;
 
-    await toast.promise(api.delete(`/dishes/${id}`), {
-      loading: "Изтривам...", success: "Ястието е изтрито", error: "Грешка при изтриване",
-    });
-    load(query.page);
+    try {
+      setUiBusy(true);
+      await toast.promise(api.delete(`/dishes/${id}`), {
+        loading: "Изтривам...",
+        success: "Ястието е изтрито",
+        error: "Грешка при изтриване",
+      });
+      load(query.page);
+    } finally {
+      setUiBusy(false);
+    }
   };
 
   // ---------- Image preview / remove ----------
@@ -186,7 +234,10 @@ export default function Dishes() {
     const file = e.target.files?.[0];
     setRemoveImage(false); // има нов файл -> няма нужда да трием старата
     if (preview) URL.revokeObjectURL(preview);
-    if (!file) { setPreview(null); return; }
+    if (!file) {
+      setPreview(null);
+      return;
+    }
     const url = URL.createObjectURL(file);
     setPreview(url);
   }
@@ -204,29 +255,34 @@ export default function Dishes() {
   }, [data?.meta.last_page]);
 
   // ---------- DnD ----------
-const onDragEnd = async (e: DragEndEvent) => {
-  const { active, over } = e;
-  if (!over || active.id === over.id) return;
+  const onDragEnd = async (e: DragEndEvent) => {
+    if (uiBusy) return; // не позволявай паралелни операции
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
 
-  const list = [...rows];
-  const oldIndex = list.findIndex(i => i.id === active.id);
-  const newIndex = list.findIndex(i => i.id === over.id);
-  if (oldIndex === -1 || newIndex === -1) return;
+    const list = [...rows];
+    const oldIndex = list.findIndex((i) => i.id === active.id);
+    const newIndex = list.findIndex((i) => i.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
 
-  const reordered = arrayMove(list, oldIndex, newIndex);
-  setRows(reordered); // optimistic
+    const reordered = arrayMove(list, oldIndex, newIndex);
+    setRows(reordered); // optimistic
 
-  await toast.promise(
-    api.post("/dishes/reorder", {
-      ids: reordered.map(i => i.id),
-      category_id: query.category_id ?? undefined, // 👈 ВАЖНО
-    }),
-    { loading: "Записвам подредбата…", success: "Редът е записан", error: "Грешка при запис на реда" }
-  );
-
-  // За да видиш промяната (при сорт по position):
-  load(1); // 👈 върни се на стр. 1
-};
+    try {
+      setUiBusy(true);
+      await toast.promise(
+        api.post("/dishes/reorder", {
+          ids: reordered.map((i) => i.id),
+          category_id: query.category_id ?? undefined, // 👈 ВАЖНО
+        }),
+        { loading: "Записвам подредбата…", success: "Редът е записан", error: "Грешка при запис на реда" }
+      );
+      // За да видиш промяната (при сорт по position):
+      load(1); // 👈 върни се на стр. 1
+    } finally {
+      setUiBusy(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -242,11 +298,16 @@ const onDragEnd = async (e: DragEndEvent) => {
             className="border rounded p-2"
             value={query.category_id ?? ""}
             onChange={(e) =>
-              setQuery(q => ({ ...q, page: 1, category_id: e.target.value ? Number(e.target.value) : undefined }))
+              setQuery((q) => ({ ...q, page: 1, category_id: e.target.value ? Number(e.target.value) : undefined }))
             }
+            disabled={disableAll}
           >
             <option value="">Всички</option>
-            {cats.map(c => (<option key={c.id} value={c.id}>{c.name}</option>))}
+            {cats.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -255,7 +316,8 @@ const onDragEnd = async (e: DragEndEvent) => {
           <input
             className="border rounded p-2"
             placeholder="име/описание"
-            onChange={(e) => setQuery(q => ({ ...q, page: 1, search: e.target.value || undefined }))}
+            onChange={(e) => setQuery((q) => ({ ...q, page: 1, search: e.target.value || undefined }))}
+            disabled={disableAll}
           />
         </div>
       </div>
@@ -263,22 +325,48 @@ const onDragEnd = async (e: DragEndEvent) => {
       {/* Форма */}
       <form onSubmit={handleSubmit(onSubmit)} className="border rounded p-4 space-y-3 bg-white overflow-hidden">
         <div className="grid gap-3 grid-cols-1 sm:grid-cols-6">
-          <input placeholder="Име" className="border rounded p-2 w-full sm:col-span-2" {...register("name")} />
-          <select className="border rounded p-2 w-full sm:col-span-2" {...register("category_id", { valueAsNumber: true })}>
+          <div className="sm:col-span-2">
+            <input
+              placeholder="Име"
+              className="border rounded p-2 w-full"
+              {...register("name", {
+                required: "Името е задължително",
+                validate: (v) => v.trim().length > 0 || "Името е задължително",
+              })}
+              disabled={disableAll}
+            />
+            {errors.name && <span className="text-sm text-red-600">{errors.name.message}</span>}
+          </div>
+
+          <select
+            className="border rounded p-2 w-full sm:col-span-2"
+            {...register("category_id", { valueAsNumber: true })}
+            disabled={disableAll}
+          >
             <option value={0}>-- избери категория --</option>
-            {cats.map(c => (<option key={c.id} value={c.id}>{c.name}</option>))}
+            {cats.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
           </select>
+
           <div className="flex items-center gap-2 min-w-0 sm:col-span-1">
             <input
-              type="number" step="0.01" placeholder="Цена" className="border rounded p-2 w-full"
+              type="number"
+              step="0.01"
+              placeholder="Цена"
+              className="border rounded p-2 w-full"
               {...register("price", { valueAsNumber: true })}
+              disabled={disableAll}
             />
             <span className="text-xs text-gray-500 shrink-0 whitespace-nowrap">
               ≈ {fmtEUR.format(bgnToEur(Number(watchPrice ?? 0)))}
             </span>
           </div>
+
           <label className="flex items-center gap-2 sm:col-span-1">
-            <input type="checkbox" {...register("is_active")} />
+            <input type="checkbox" {...register("is_active")} disabled={disableAll} />
             <span>Активно</span>
           </label>
 
@@ -291,37 +379,64 @@ const onDragEnd = async (e: DragEndEvent) => {
                 {...imageRegister}
                 ref={(el) => {
                   imageInputRef.current = el ?? null; // нашият DOM ref
-                  imageRegister.ref(el);               // RHF ref
+                  imageRegister.ref(el); // RHF ref
                 }}
                 onChange={(e) => {
-                  imageRegister.onChange(e);          // RHF да види файла
-                  handleImageChange(e);               // превю
+                  imageRegister.onChange(e); // RHF да види файла
+                  handleImageChange(e); // превю
                 }}
                 className="shrink-0"
+                disabled={disableAll}
               />
               <div className="w-24 h-16 rounded border bg-gray-50 overflow-hidden flex items-center justify-center">
                 {(preview ?? editing?.image_url) ? (
-                  <img src={(preview ?? editing?.image_url) as string} alt="Preview" className="max-w-full max-h-full object-contain" />
+                  <img
+                    src={(preview ?? editing?.image_url) as string}
+                    alt="Preview"
+                    className="max-w-full max-h-full object-contain"
+                  />
                 ) : (
                   <span className="text-xs text-gray-500">Няма снимка</span>
                 )}
               </div>
             </div>
             {(preview || editing?.image_url) && (
-              <button type="button" onClick={() => clearPreview(true)} className="mt-2 text-xs text-gray-600 underline" title="Премахни снимката">
+              <button
+                type="button"
+                onClick={() => clearPreview(true)}
+                className={`mt-2 text-xs text-gray-600 underline ${disableAll ? "opacity-60 cursor-not-allowed" : ""}`}
+                disabled={disableAll}
+                title="Премахни снимката"
+              >
                 Премахни снимката
               </button>
             )}
           </div>
         </div>
 
-        <textarea placeholder="Описание" className="w-full border rounded p-2" rows={3} {...register("description")} />
+        <textarea
+          placeholder="Описание"
+          className="w-full border rounded p-2"
+          rows={3}
+          {...register("description")}
+          disabled={disableAll}
+        />
+
         <div className="flex flex-wrap items-center gap-2">
-          <button className="px-4 py-2 bg-black text-white rounded">{editing ? "Запази" : "Създай"}</button>
+          <button
+            className={`px-4 py-2 rounded text-white bg-black ${
+              !isDirty || !isValid || disableAll ? "opacity-60 cursor-not-allowed" : ""
+            }`}
+            disabled={!isDirty || !isValid || disableAll}
+          >
+            {editing ? "Запази" : "Създай"}
+          </button>
+
           {editing && (
             <button
               type="button"
-              className="px-3 py-2 bg-gray-200 rounded"
+              className={`px-3 py-2 bg-gray-200 rounded ${disableAll ? "opacity-60 cursor-not-allowed" : ""}`}
+              disabled={disableAll}
               onClick={() => {
                 setEditing(null);
                 reset({ name: "", price: 0, is_active: true, category_id: 0, description: "" });
@@ -337,7 +452,7 @@ const onDragEnd = async (e: DragEndEvent) => {
       {/* Таблица + DnD */}
       <div className="overflow-x-auto rounded-lg border bg-white">
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
-          <SortableContext items={rows.map(i => i.id)} strategy={verticalListSortingStrategy}>
+          <SortableContext items={rows.map((i) => i.id)} strategy={verticalListSortingStrategy}>
             <table className="min-w-full text-sm">
               <thead className="bg-gray-50">
                 <tr>
@@ -353,11 +468,13 @@ const onDragEnd = async (e: DragEndEvent) => {
               <tbody>
                 {loading && (
                   <tr>
-                    <td className="p-3" colSpan={7}>Зареждане...</td>
+                    <td className="p-3" colSpan={7}>
+                      Зареждане...
+                    </td>
                   </tr>
                 )}
-                {rows.map(d => (
-                  <SortableRow key={d.id} d={d} onEdit={onEdit} onDelete={onDelete} />
+                {rows.map((d) => (
+                  <SortableRow key={d.id} d={d} onEdit={onEdit} onDelete={onDelete} disableAll={disableAll} />
                 ))}
               </tbody>
             </table>
@@ -367,11 +484,14 @@ const onDragEnd = async (e: DragEndEvent) => {
 
       {/* Странициране */}
       <div className="flex gap-2">
-        {pages.map(p => (
+        {pages.map((p) => (
           <button
             key={p}
-            onClick={() => setQuery(q => ({ ...q, page: p }))}
-            className={`px-3 py-1 rounded border ${p === data?.meta.current_page ? "bg-black text-white" : ""}`}
+            onClick={() => setQuery((q) => ({ ...q, page: p }))}
+            disabled={disableAll || loading}
+            className={`px-3 py-1 rounded border ${
+              disableAll || loading ? "opacity-60 cursor-not-allowed" : ""
+            } ${p === data?.meta.current_page ? "bg-black text-white" : ""}`}
           >
             {p}
           </button>

@@ -49,7 +49,7 @@ export default function AvvaMenu() {
   };
 
   const SOCIAL = {
-    instagram: "https://www.instagram.com/avva_cafe_bar_grill", // ако имаш точен профил – смени тук
+    instagram: "https://www.instagram.com/avva_cafe_bar_grill",
     facebook:
       "https://www.facebook.com/AVVAKaffeGrillBarOrginaL?mibextid=wwXIfr&rdid=cPr6pnP25u9ZDAxF&share_url=https%3A%2F%2Fwww.facebook.com%2Fshare%2F1JqS4D4AAo%2F%3Fmibextid%3DwwXIfr",
   };
@@ -57,7 +57,6 @@ export default function AvvaMenu() {
   function mapsUrl(addr: string) {
     const q = encodeURIComponent(addr);
     const isiOS = /iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent || "");
-    // Коригиран URL адресът за Google Maps
     return isiOS ? `maps://?q=${q}` : `https://maps.google.com/?q=${q}`;
   }
 
@@ -80,10 +79,13 @@ export default function AvvaMenu() {
       try {
         const [cRes, dRes] = await Promise.all([
           api.get("/categories?only_active=1&sort=position,name&per_page=-1"),
-          api.get("/dishes?only_active=1&sort=position,name&per_page=-1"),]);
+          api.get("/dishes?only_active=1&sort=position,name&per_page=-1"),
+        ]);
 
         const catsData: Category[] = cRes.data.data ?? cRes.data;
-        const dishesData: Dish[] = (dRes.data.data ?? dRes.data).filter((d: Dish) => d.is_active);
+        const dishesData: Dish[] = (dRes.data.data ?? dRes.data).filter(
+          (d: Dish) => d.is_active
+        );
 
         const onlyActiveCats = catsData.filter((c) => c.is_active);
         setCats(onlyActiveCats);
@@ -117,15 +119,91 @@ export default function AvvaMenu() {
     return g;
   }, [dishes]);
 
-  // ЛОГИКА ЗА BAR КАТЕГОРИИ (Коригирана)
+  // helper за category_id от ястие
+  const getDishCategoryId = (d: Dish) =>
+    (d as any).category?.id ?? (d as any).category_id ?? null;
+
+  // ЛОГИКА ЗА BAR КАТЕГОРИИ
   const isBarCategory = (name: string) => {
     const n = name.toLowerCase();
     const keys = [
-      "drink", "drinks", "bar", "beer", "wine", "cocktail", "coffee", "tea", "alcohol", "spirit", "fresh", "milkshakes", "whiskey", "cognac", "jin", "vodka", "extras",
-      "напит", "бар", "бира", "вино", "коктейл", "кафе", "чай", "алкохол", "ракия", "фрешове", "шейкове", "уиски", "коняк", "джин", "водка", "екстри"
+      "drink",
+      "drinks",
+      "bar",
+      "beer",
+      "wine",
+      "cocktail",
+      "coffee",
+      "tea",
+      "alcohol",
+      "spirit",
+      "fresh",
+      "milkshakes",
+      "whiskey",
+      "cognac",
+      "jin",
+      "vodka",
+      "extras",
+      "напит",
+      "бар",
+      "бира",
+      "вино",
+      "коктейл",
+      "кафе",
+      "чай",
+      "алкохол",
+      "ракия",
+      "фрешове",
+      "шейкове",
+      "уиски",
+      "коняк",
+      "джин",
+      "водка",
+      "екстри",
     ];
     return keys.some((k) => n.includes(k));
   };
+
+  // кои категории имат поне едно ястие, съвпадащо с търсенето (по име/описание)
+  const dishMatchCatIds = useMemo(() => {
+    const s = query.trim().toLowerCase();
+    const ids = new Set<number>();
+    if (!s) return ids;
+    for (const d of dishes) {
+      const nameHit = d.name?.toLowerCase().includes(s);
+      const descHit = d.description?.toLowerCase().includes(s);
+      if (nameHit || descHit) {
+        const cid = getDishCategoryId(d);
+        if (cid != null) ids.add(cid);
+      }
+    }
+    return ids;
+  }, [dishes, query]);
+
+  // При търсене: отваряме категорията на първото намерено ястие и сменяме таба при нужда
+  useEffect(() => {
+    const s = query.trim().toLowerCase();
+    if (!s) return;
+
+    const match = dishes.find(
+      (d) =>
+        d.name?.toLowerCase().includes(s) ||
+        d.description?.toLowerCase().includes(s)
+    );
+    if (!match) return;
+
+    const cid = getDishCategoryId(match);
+    if (!cid) return;
+
+    const cat = cats.find((c) => c.id === cid);
+    if (cat) {
+      const desiredPill: Pill = isBarCategory(cat.name) ? "bar" : "food";
+      if (pill !== desiredPill) setPill(desiredPill);
+    }
+
+    if (openedCatId !== cid) setOpenedCatId(cid);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, dishes, cats]); // не включваме pill/openedCatId — ще се сетнат вътре ако трябва
 
   const tilesToShow: Category[] = useMemo(() => {
     let list = cats;
@@ -134,19 +212,30 @@ export default function AvvaMenu() {
     return list;
   }, [cats, pill]);
 
+  // без търсене → плочките според таба
+  // с търсене → показваме всички категории, които съвпадат по име ИЛИ имат съвпадащо ястие
   const filteredTiles: Category[] = useMemo(() => {
-    if (!query.trim()) return tilesToShow;
-    const q = query.toLowerCase();
-    return tilesToShow.filter((c) => c.name.toLowerCase().includes(q));
-  }, [tilesToShow, query]);
+    const s = query.trim().toLowerCase();
+    if (!s) return tilesToShow;
+    return cats.filter(
+      (c) => c.name.toLowerCase().includes(s) || dishMatchCatIds.has(c.id)
+    );
+  }, [cats, tilesToShow, query, dishMatchCatIds]);
 
   const openCategory = (id: number) => setOpenedCatId(id);
   const backToTiles = () => setOpenedCatId(null);
 
+  // ⚠️ махаме авто-затварянето при търсене – то пречеше да се отвори намерената категория
+  // useEffect(() => {
+  //   if (query.trim()) setOpenedCatId(null);
+  // }, [query]);
+
   const filteredAllergens = useMemo(() => {
     const q = aQuery.trim().toLowerCase();
     if (!q) return allergens;
-    return allergens.filter((a) => a.code.toLowerCase().includes(q) || a.name.toLowerCase().includes(q));
+    return allergens.filter(
+      (a) => a.code.toLowerCase().includes(q) || a.name.toLowerCase().includes(q)
+    );
   }, [allergens, aQuery]);
 
   if (notFound) return <NotFound />;
@@ -163,10 +252,8 @@ export default function AvvaMenu() {
         fontFamily: "'Rubik', sans-serif",
       }}
     >
-
       {/* COVER */}
       <div className={`${WRAP} pt-2 sm:pt-4`}>
-
         <div className="relative h-[140px] sm:h-[200px] rounded-2xl overflow-hidden border border-black shadow-sm">
           {/* STICKY TOP BAR (само вътре в категория) */}
           {openedCatId !== null && (
@@ -176,8 +263,7 @@ export default function AvvaMenu() {
                   <div className="flex items-center gap-3 py-2">
                     <button
                       onClick={backToTiles}
-                      className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm
-                             bg-black/60 text-white border border-white/70 hover:bg-black/70 backdrop-blur"
+                      className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm bg-black/60 text-white border border-white/70 hover:bg-black/70 backdrop-blur"
                       title="Назад"
                     >
                       ← Назад
@@ -188,10 +274,13 @@ export default function AvvaMenu() {
             </div>
           )}
 
-          <img src={BRAND.coverUrl} alt="" className="absolute inset-0 w-full h-full object-cover" />
+          <img
+            src={BRAND.coverUrl}
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover"
+          />
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/25 to-transparent" />
         </div>
-
       </div>
 
       {/* HEADER CARD */}
@@ -200,9 +289,15 @@ export default function AvvaMenu() {
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               {BRAND.logoUrl ? (
-                <img src={BRAND.logoUrl} className="h-10 w-10 rounded-full object-cover border" />
+                <img
+                  src={BRAND.logoUrl}
+                  className="h-10 w-10 rounded-full object-cover border"
+                />
               ) : null}
-              <h1 className="text-xl sm:text-2xl md:text-3xl font-bold" style={{ color: BRAND.color.primary }}>
+              <h1
+                className="text-xl sm:text-2xl md:text-3xl font-bold"
+                style={{ color: BRAND.color.primary }}
+              >
                 {BRAND.name}
               </h1>
             </div>
@@ -215,18 +310,20 @@ export default function AvvaMenu() {
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 hover:underline"
             >
-              <span>📍</span>{BRAND.address}
+              <span>📍</span>
+              {BRAND.address}
             </a>
 
             <a
               href={`tel:${BRAND.phoneTel}`}
               className="inline-flex items-center gap-1 hover:underline"
             >
-              <span>📞</span>{BRAND.phone}
+              <span>📞</span>
+              {BRAND.phone}
             </a>
 
             <div className="flex items-center gap-2">
-              {/* Facebook */}
+              {/* Facebook (неутрален стил) */}
               {SOCIAL.facebook && (
                 <a
                   href={SOCIAL.facebook}
@@ -236,14 +333,20 @@ export default function AvvaMenu() {
                   aria-label="Facebook"
                   title="Facebook"
                 >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
                     <path d="M22 12.06C22 6.477 17.523 2 11.94 2 6.356 2 1.88 6.477 1.88 12.06c0 5.018 3.66 9.177 8.44 9.94v-7.03H7.99v-2.91h2.33v-2.22c0-2.3 1.367-3.57 3.462-3.57.997 0 2.04.178 2.04.178v2.25h-1.149c-1.133 0-1.487.703-1.487 1.423v1.94h2.533l-.404 2.91h-2.129V22c4.78-.763 8.44-4.922 8.44-9.94Z" />
                   </svg>
                   <span className="font-medium">Facebook</span>
                 </a>
               )}
 
-              {/* Instagram */}
+              {/* Instagram (неутрален стил) */}
               {SOCIAL.instagram && (
                 <a
                   href={SOCIAL.instagram}
@@ -253,16 +356,20 @@ export default function AvvaMenu() {
                   aria-label="Instagram"
                   title="Instagram"
                 >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
                     <path d="M7 2h10a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5Zm0 2a3 3 0 0 0-3 3v10a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3V7a3 3 0 0 0-3-3H7Zm5 3.5A5.5 5.5 0 1 1 6.5 13 5.51 5.51 0 0 1 12 7.5Zm0 2A3.5 3.5 0 1 0 15.5 13 3.5 3.5 0 0 0 12 9.5Zm5.75-3.25a1.25 1.25 0 1 1-1.25 1.25 1.25 1.25 0 0 1 1.25-1.25Z" />
                   </svg>
                   <span className="font-medium">Instagram</span>
                 </a>
               )}
             </div>
-
           </div>
-
 
           {/* PILLS */}
           <div className="mt-3 sm:mt-4 flex gap-2 flex-wrap">
@@ -280,7 +387,9 @@ export default function AvvaMenu() {
                 }}
                 className={
                   "rounded-full px-3 py-1.5 text-sm transition border " +
-                  (pill === p.key ? "bg-[#FFC107] text-white border-black" : "bg-neutral-100 hover:bg-neutral-200 border-black")
+                  (pill === p.key
+                    ? "bg-[#FFC107] text-white border-black"
+                    : "bg-neutral-100 hover:bg-neutral-200 border-black")
                 }
                 aria-pressed={pill === p.key}
               >
@@ -295,7 +404,7 @@ export default function AvvaMenu() {
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Търсене в категориите"
+                placeholder="Търсене в категории и ястия"
                 className="w-full rounded-full border border-black px-4 py-3 pr-11 outline-none focus:ring-2 focus:ring-[#FFC107]"
               />
               <span className="absolute right-3 top-1/2 -translate-y-1/2">🔎</span>
@@ -337,8 +446,14 @@ export default function AvvaMenu() {
                   </thead>
                   <tbody>
                     {filteredAllergens.map((a, i) => (
-                      <tr key={a.id} className={i % 2 === 0 ? "bg-white" : "bg-neutral-50/60"} title={`${a.code} — ${a.name}`}>
-                        <td className="px-3 py-2 font-semibold whitespace-nowrap">{a.code}</td>
+                      <tr
+                        key={a.id}
+                        className={i % 2 === 0 ? "bg-white" : "bg-neutral-50/60"}
+                        title={`${a.code} — ${a.name}`}
+                      >
+                        <td className="px-3 py-2 font-semibold whitespace-nowrap">
+                          {a.code}
+                        </td>
                         <td className="px-3 py-2 break-words">{a.name}</td>
                       </tr>
                     ))}
@@ -352,8 +467,14 @@ export default function AvvaMenu() {
         {/* Tiles */}
         {pill !== "allergens" && openedCatId === null && (
           <>
-            {loading && <div className="py-10 text-center text-neutral-300">Зареждане…</div>}
-            {!loading && filteredTiles.length === 0 && <div className="py-10 text-center text-neutral-300">Няма категории.</div>}
+            {loading && (
+              <div className="py-10 text-center text-neutral-300">Зареждане…</div>
+            )}
+            {!loading && filteredTiles.length === 0 && (
+              <div className="py-10 text-center text-neutral-300">
+                Няма категории.
+              </div>
+            )}
             {!loading &&
               filteredTiles.map((c) => (
                 <button
@@ -363,7 +484,11 @@ export default function AvvaMenu() {
                   title={c.name}
                 >
                   {c.image_url ? (
-                    <img src={c.image_url} alt="" className="absolute inset-0 w-full h-full object-cover" />
+                    <img
+                      src={c.image_url}
+                      alt=""
+                      className="absolute inset-0 w-full h-full object-cover"
+                    />
                   ) : (
                     <div className="absolute inset-0 bg-neutral-200" />
                   )}
@@ -371,7 +496,9 @@ export default function AvvaMenu() {
                   <div className="absolute inset-0 flex items-center justify-center">
                     <span
                       className="text-white text-2xl md:text-[28px] font-bold tracking-wide"
-                      style={{ textShadow: "0 0 3px #000, 0 0 3px #000, 0 0 3px #000" }}
+                      style={{
+                        textShadow: "0 0 3px #000, 0 0 3px #000, 0 0 3px #000",
+                      }}
                     >
                       {c.name.toUpperCase()}
                     </span>
@@ -386,39 +513,78 @@ export default function AvvaMenu() {
           openedCatId !== null &&
           (() => {
             const c = cats.find((x) => x.id === openedCatId);
-            const list = (c && grouped[c.id]) || [];
+            let list = (c && grouped[c.id]) || [];
+
+            // филтър на ястията вътре в категория при търсене
+            const s = query.trim().toLowerCase();
+            if (s) {
+              list = list.filter(
+                (d) =>
+                  d.name.toLowerCase().includes(s) ||
+                  (d.description && d.description.toLowerCase().includes(s))
+              );
+            }
 
             // Grid Layout за Food категории, List Layout за Bar/Drinks
             const isGridLayout = !isBarCategory(c?.name ?? "");
 
             return (
               <section className="mt-6">
-                <h2 className="text-xl md:text-2xl font-semibold mb-3 text-white">{c?.name}</h2>
+                <h2 className="text-xl md:text-2xl font-semibold mb-3 text-white">
+                  {c?.name}
+                </h2>
+
+                {s && list.length === 0 && (
+                  <div className="py-6 text-center text-neutral-400">
+                    Няма ястия по това търсене.
+                  </div>
+                )}
 
                 {isGridLayout ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {list.map((d) => (
-                      <article key={d.id} className="rounded-2xl overflow-hidden border border-black bg-white shadow-sm">
+                      <article
+                        key={d.id}
+                        className="rounded-2xl overflow-hidden border border-black bg-white shadow-sm"
+                      >
                         {d.image_url && (
                           <div className="relative aspect-[16/9] w-full">
-                            <img src={d.image_url} alt={d.name} className="absolute inset-0 w-full h-full object-cover" />
+                            <img
+                              src={d.image_url}
+                              alt={d.name}
+                              className="absolute inset-0 w-full h-full object-cover"
+                            />
                           </div>
                         )}
 
                         <div className="p-4">
                           <div className="flex items-start justify-between gap-3">
-                            <h3 className="text-lg md:text-xl font-semibold">{d.name}</h3>
+                            <h3 className="text-lg md:text-xl font-semibold">
+                              {d.name}
+                            </h3>
                             {!!d.price && (
                               <div className="text-right text-sm font-semibold">
-                                <div className="text-[#FFC107]">{fmtBGN.format(d.price)}</div>
-                                <div className="opacity-60">({fmtEUR.format(bgnToEur(d.price))})</div>
+                                <div className="text-[#FFC107]">
+                                  {fmtBGN.format(d.price)}
+                                </div>
+                                <div className="opacity-60">
+                                  ({fmtEUR.format(bgnToEur(d.price))})
+                                </div>
                               </div>
                             )}
                           </div>
 
-                          {!!d.description && <p className="text-sm text-neutral-700 mt-2">{d.description}</p>}
+                          {!!d.description && (
+                            <p className="text-sm text-neutral-700 mt-2">
+                              {d.description}
+                            </p>
+                          )}
 
-                          {!d.is_active && <div className="mt-2 text-xs uppercase text-neutral-500">недостъпно</div>}
+                          {!d.is_active && (
+                            <div className="mt-2 text-xs uppercase text-neutral-500">
+                              недостъпно
+                            </div>
+                          )}
                         </div>
                       </article>
                     ))}
@@ -429,19 +595,37 @@ export default function AvvaMenu() {
                       {list.map((d) => (
                         <li key={d.id} className="flex items-center gap-3 p-4">
                           {!!d.image_url && (
-                            <img src={d.image_url} className="h-16 w-16 rounded-xl object-cover border border-black" alt="" />
+                            <img
+                              src={d.image_url}
+                              className="h-16 w-16 rounded-xl object-cover border border-black"
+                              alt=""
+                            />
                           )}
                           <div className="flex-1">
                             <div className="flex items-center gap-2">
-                              <h3 className="text-[17px] font-medium">{d.name}</h3>
-                              {!d.is_active && <span className="text-xs text-neutral-500 uppercase">недостъпно</span>}
+                              <h3 className="text-[17px] font-medium">
+                                {d.name}
+                              </h3>
+                              {!d.is_active && (
+                                <span className="text-xs text-neutral-500 uppercase">
+                                  недостъпно
+                                </span>
+                              )}
                             </div>
-                            {!!d.description && <p className="text-sm text-neutral-600 mt-0.5">{d.description}</p>}
+                            {!!d.description && (
+                              <p className="text-sm text-neutral-600 mt-0.5">
+                                {d.description}
+                              </p>
+                            )}
                           </div>
                           {!!d.price && (
                             <div className="text-right text-sm font-semibold">
-                              <div className="text-[#FFC107]">{fmtBGN.format(d.price)}</div>
-                              <div className="opacity-60">({fmtEUR.format(bgnToEur(d.price))})</div>
+                              <div className="text-[#FFC107]">
+                                {fmtBGN.format(d.price)}
+                              </div>
+                              <div className="opacity-60">
+                                ({fmtEUR.format(bgnToEur(d.price))})
+                              </div>
                             </div>
                           )}
                         </li>
@@ -453,8 +637,8 @@ export default function AvvaMenu() {
             );
           })()}
       </main>
-      <MenuFooter />
 
+      <MenuFooter />
     </div>
   );
 }
