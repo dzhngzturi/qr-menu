@@ -48,7 +48,7 @@ export default function PublicMenu() {
 
         const [cRes, dRes] = await Promise.all([
           api.get("/categories?only_active=1&sort=position,name&per_page=-1"),
-          api.get("/dishes?only_active=1&sort=name&per_page=-1"),
+          api.get("/dishes?only_active=1&sort=position,name&per_page=-1"),
         ]);
 
         const catsData: Category[] = cRes.data.data ?? cRes.data;
