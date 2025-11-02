@@ -1,41 +1,73 @@
 // src/lib/api.ts
-import axios from "axios";
+import axios, { AxiosHeaders, type AxiosRequestConfig } from "axios";
 import { toast } from "react-hot-toast";
 
+/* ---------- helpers ---------- */
 function getRestaurantSlug(): string | undefined {
-  // 1) от URL: /admin/r/:slug или /menu/:slug
   const mAdmin = window.location.pathname.match(/\/admin\/r\/([^/]+)/);
   if (mAdmin?.[1]) return mAdmin[1];
   const mMenu = window.location.pathname.match(/\/menu\/([^/]+)/);
   if (mMenu?.[1]) return mMenu[1];
 
-  // 2) fallback от localStorage (нов ключ), после стария
   return (
     localStorage.getItem("restaurant_slug") ||
-    localStorage.getItem("restaurant") || // съвместимост със стария код
+    localStorage.getItem("restaurant") ||
     undefined
   );
 }
 
-// Динамичен fallback: взима IP/hostname от текущия адрес
+const isPublicGet = (method: AxiosRequestConfig["method"], url: string) => {
+  const m = (method || "get").toUpperCase();
+  if (m !== "GET") return false;
+  // публични пътища: /menu, /categories, /dishes, /allergens
+  return /^\/(menu|categories|dishes|allergens)\b/.test(url);
+};
+
 const fallbackBase = `http://${window.location.hostname}:8000/api`;
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || fallbackBase).replace(/\/+$/, "");
 
+/* ---------- axios client ---------- */
 const api = axios.create({
   baseURL: API_BASE,
   headers: { Accept: "application/json" },
 });
 
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("token");
-  if (token) config.headers.Authorization = `Bearer ${token}`;
+/* ---------- safe header setters for Axios v1 ---------- */
+function setHeader(headers: AxiosRequestConfig["headers"], key: string, val: string) {
+  if (!headers) return;
+  if (headers instanceof AxiosHeaders) {
+    headers.set(key, val);
+  } else {
+    (headers as Record<string, string>)[key] = val;
+  }
+}
 
+function deleteHeader(headers: AxiosRequestConfig["headers"], key: string) {
+  if (!headers) return;
+  if (headers instanceof AxiosHeaders) {
+    headers.delete?.(key);
+  } else {
+    delete (headers as Record<string, unknown>)[key];
+  }
+}
+
+/* ---------- interceptors ---------- */
+api.interceptors.request.use((config) => {
   const url = config.url || "";
+  const method = config.method;
+
+  // 1) Authorization само ако НЕ е публичен GET
+  const token = localStorage.getItem("token");
+  if (token && !isPublicGet(method, url)) {
+    setHeader(config.headers, "Authorization", `Bearer ${token}`);
+  } else {
+    deleteHeader(config.headers, "Authorization");
+  }
+
+  // 2) Авто ?restaurant=:slug (извън platform/auth)
   const isPlatform = url.startsWith("/platform") || url.includes("/platform/");
   const isAuth = url.startsWith("/auth") || url.includes("/auth/");
 
-  // ако не е платформа/автентикация – добавяме ?restaurant=,
-  // НО само ако клиентът не е подал вече restaurant в params
   if (!isPlatform && !isAuth) {
     const alreadyHasParam =
       (config.params && Object.prototype.hasOwnProperty.call(config.params, "restaurant")) ||
@@ -48,6 +80,7 @@ api.interceptors.request.use((config) => {
       }
     }
   }
+
   return config;
 });
 
