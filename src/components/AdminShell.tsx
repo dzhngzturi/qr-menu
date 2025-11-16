@@ -5,6 +5,9 @@ import { useAuth } from "../context/AuthContext";
 import { toast } from "react-hot-toast";
 import Modal from "./Modal";
 
+// 🆕 обща конфигурация за телеметрия (allow-list)
+import { isTelemetryEnabledSlug } from "../lib/telemetry-config";
+
 /* ---------- Профил в сайдбара + модал ---------- */
 function ProfileInline() {
   const { user, updateProfile, refreshMe } = useAuth();
@@ -46,7 +49,9 @@ function ProfileInline() {
   return (
     <>
       <div className="mt-3 rounded-lg bg-white/5 px-3 py-2">
-        <div className="text-[11px] uppercase tracking-wide text-white/60">Моят профил</div>
+        <div className="text-[11px] uppercase tracking-wide text-white/60">
+          Моят профил
+        </div>
         <div className="mt-1 text-sm">
           <div className="font-medium">{user.name}</div>
           <div className="text-white/70">{user.email}</div>
@@ -144,16 +149,10 @@ export default function AdminShell() {
   const [slugInput, setSlugInput] = useState<string>("");
   const quickSlugRef = useRef<HTMLInputElement>(null);
 
-  // горе в AdminShell.tsx
-  const HIDE_ALLERGENS_FOR = new Set<string>([
-    "viva",   // добавяй тук slug-ове
-    // "viva",
-  ]);
-
+  // кои ресторанти да скрием Алергените
+  const HIDE_ALLERGENS_FOR = new Set<string>(["viva"]);
   const shouldShowAllergens = (slug?: string | null) =>
     !!slug && !HIDE_ALLERGENS_FOR.has(slug.toLowerCase());
-
-
 
   useEffect(() => {
     const fromUrl = slug || "";
@@ -187,12 +186,30 @@ export default function AdminShell() {
     try {
       await logout();
     } finally {
+      // чистим всички наши “ресторантски” данни от localStorage
+      try {
+        localStorage.removeItem("restaurant_slug");
+        localStorage.removeItem("restaurant");
+        // ако имаш други ключове свързани с ресторанта / телеметрията – добави ги тук
+        // localStorage.removeItem("telemetry_session_id");
+      } catch (e) {
+        console.warn("Cannot access localStorage on logout:", e);
+      }
+
+      // нулираме и локалния state, за да не остава стар slug в UI
+      setRestaurant("");
+      setSlugInput("");
+
       setLogoutOpen(false);
       navigate("/login", { replace: true });
     }
   };
 
+
   const showPlatformTools = isAdmin === true;
+
+  // 🆕 тук ползваме allow-list-а за телеметрия
+  const telemetryEnabled = isTelemetryEnabledSlug(restaurant);
 
   /* ---------- Sidebar (общо съдържание) ---------- */
   const SidebarContent = (
@@ -271,10 +288,29 @@ export default function AdminShell() {
       </div>
 
       <nav className="px-2 py-3 space-y-1">
+        {/* 🆕 Линкът Телеметрия се показва само ако allow-list казва ОК */}
+        {restaurant && telemetryEnabled && (
+          <NavLink
+            to={`/admin/r/${restaurant}/telemetry`}
+            className={({ isActive }) =>
+              `block rounded px-4 py-2 text-sm ${isActive ? "bg-white/10 font-medium" : "hover:bg-white/5"
+              }`
+            }
+            onClick={() => setSidebarOpen(false)}
+          >
+            Телеметрия
+          </NavLink>
+        )}
+
         <NavLink
-          to={restaurant ? `/admin/r/${restaurant}/categories` : "/admin/platform/restaurants"}
+          to={
+            restaurant
+              ? `/admin/r/${restaurant}/categories`
+              : "/admin/platform/restaurants"
+          }
           className={({ isActive }) =>
-            `block rounded px-4 py-2 text-sm ${isActive ? "bg-white/10 font-medium" : "hover:bg-white/5"}`
+            `block rounded px-4 py-2 text-sm ${isActive ? "bg-white/10 font-medium" : "hover:bg-white/5"
+            }`
           }
           onClick={() => setSidebarOpen(false)}
         >
@@ -282,9 +318,14 @@ export default function AdminShell() {
         </NavLink>
 
         <NavLink
-          to={restaurant ? `/admin/r/${restaurant}/dishes` : "/admin/platform/restaurants"}
+          to={
+            restaurant
+              ? `/admin/r/${restaurant}/dishes`
+              : "/admin/platform/restaurants"
+          }
           className={({ isActive }) =>
-            `block rounded px-4 py-2 text-sm ${isActive ? "bg-white/10 font-medium" : "hover:bg-white/5"}`
+            `block rounded px-4 py-2 text-sm ${isActive ? "bg-white/10 font-medium" : "hover:bg-white/5"
+            }`
           }
           onClick={() => setSidebarOpen(false)}
         >
@@ -293,9 +334,14 @@ export default function AdminShell() {
 
         {shouldShowAllergens(restaurant) && (
           <NavLink
-            to={restaurant ? `/admin/r/${restaurant}/allergens` : "/admin/platform/restaurants"}
+            to={
+              restaurant
+                ? `/admin/r/${restaurant}/allergens`
+                : "/admin/platform/restaurants"
+            }
             className={({ isActive }) =>
-              `block rounded px-4 py-2 text-sm ${isActive ? "bg-white/10 font-medium" : "hover:bg-white/5"}`
+              `block rounded px-4 py-2 text-sm ${isActive ? "bg-white/10 font-medium" : "hover:bg-white/5"
+              }`
             }
             onClick={() => setSidebarOpen(false)}
           >
@@ -303,14 +349,16 @@ export default function AdminShell() {
           </NavLink>
         )}
 
-
         {showPlatformTools && (
           <>
-            <div className="mt-4 px-4 text-[11px] uppercase tracking-wide text-white/50">Платформа</div>
+            <div className="mt-4 px-4 text-[11px] uppercase tracking-wide text-white/50">
+              Платформа
+            </div>
             <NavLink
               to="/admin/platform/restaurants"
               className={({ isActive }) =>
-                `block rounded px-4 py-2 text-sm ${isActive ? "bg-white/10 font-medium" : "hover:bg-white/5"}`
+                `block rounded px-4 py-2 text-sm ${isActive ? "bg-white/10 font-medium" : "hover:bg-white/5"
+                }`
               }
               onClick={() => setSidebarOpen(false)}
             >
@@ -320,7 +368,8 @@ export default function AdminShell() {
             <NavLink
               to="/admin/profile"
               className={({ isActive }) =>
-                `block rounded px-4 py-2 text-sm ${isActive ? "bg-white/10 font-medium" : "hover:bg-white/5"}`
+                `block rounded px-4 py-2 text-sm ${isActive ? "bg-white/10 font-medium" : "hover:bg-white/5"
+                }`
               }
               onClick={() => setSidebarOpen(false)}
             >
@@ -335,7 +384,10 @@ export default function AdminShell() {
   return (
     <div className="min-h-screen flex bg-gray-50">
       {/* Off-canvas sidebar (mobile) */}
-      <div className={`fixed inset-0 z-[60] lg:hidden ${sidebarOpen ? "" : "pointer-events-none"}`}>
+      <div
+        className={`fixed inset-0 z-[60] lg:hidden ${sidebarOpen ? "" : "pointer-events-none"
+          }`}
+      >
         {/* backdrop */}
         <div
           className={`absolute inset-0 bg-black/40 transition-opacity z-[60] ${sidebarOpen ? "opacity-100" : "opacity-0"
@@ -372,7 +424,10 @@ export default function AdminShell() {
               aria-label="Отвори меню"
             >
               <svg width="20" height="20" viewBox="0 0 24 24">
-                <path fill="currentColor" d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2" />
+                <path
+                  fill="currentColor"
+                  d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2"
+                />
               </svg>
             </button>
             <h1 className="text-lg font-semibold">Админ панел</h1>
@@ -405,13 +460,18 @@ export default function AdminShell() {
             >
               Отказ
             </button>
-            <button className="rounded bg-black text-white px-3 py-1.5 text-sm" onClick={doLogout}>
+            <button
+              className="rounded bg-black text-white px-3 py-1.5 text-sm"
+              onClick={doLogout}
+            >
               Излез
             </button>
           </div>
         }
       >
-        <div className="text-neutral-800">Сигурни ли сте, че искате да излезете?</div>
+        <div className="text-neutral-800">
+          Сигурни ли сте, че искате да излезете?
+        </div>
       </Modal>
     </div>
   );

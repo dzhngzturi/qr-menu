@@ -1,11 +1,16 @@
 // src/public/AvvaMenu.tsx
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import api from "../lib/api";
 import type { Category, Dish } from "../lib/types";
 import { bgnToEur, fmtBGN, fmtEUR } from "../lib/money";
 import NotFound from "../pages/NotFound";
 import { MenuFooter } from "../components/MenuFooter";
+import {
+  logQrScanOnceForSlug,
+  logMenuOpenForSlug,
+  logSearchDebounced,
+} from "../lib/telemetry";
 
 type Grouped = Record<number, Dish[]>;
 type Pill = "food" | "bar" | "allergens";
@@ -28,13 +33,6 @@ export default function AvvaMenu() {
   const [pill, setPill] = useState<Pill>(initialPill);
   const [allergens, setAllergens] = useState<Allergen[]>([]);
   const [aQuery, setAQuery] = useState("");
-
-  useEffect(() => {
-    const next = new URLSearchParams(sp);
-    next.set("tab", pill);
-    setSp(next, { replace: true });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pill]);
 
   const [openedCatId, setOpenedCatId] = useState<number | null>(null);
 
@@ -60,10 +58,32 @@ export default function AvvaMenu() {
     return isiOS ? `maps://?q=${q}` : `https://maps.google.com/?q=${q}`;
   }
 
-  const sectionRefs = useRef<Record<number, HTMLDivElement | null>>({});
-  const setSectionRef = (id: number) => (el: HTMLDivElement | null) => {
-    sectionRefs.current[id] = el;
-  };
+  // ---------- ТЕЛЕМЕТРИЯ ----------
+  useEffect(() => {
+    if (!slug) return;
+
+    // QR scan – веднъж на ден на устройство за този ресторант
+    logQrScanOnceForSlug(slug);
+
+    // menu_open – при всяко зареждане на менюто
+    logMenuOpenForSlug(slug);
+  }, [slug]);
+
+  // Търсене – дебоунснато (ползва logSearchDebounced от telemetry.ts)
+  useEffect(() => {
+    if (!slug) return;
+    const q = query.trim();
+    if (!q) return; // не логваме празно
+    logSearchDebounced(q, slug); // вътре има 2s debounce + min length 3
+  }, [query, slug]);
+
+  // sync tab (pill) с URL `?tab=`
+  useEffect(() => {
+    const next = new URLSearchParams(sp);
+    next.set("tab", pill);
+    setSp(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pill]);
 
   // ---------- Зареждане на данни ----------
   useEffect(() => {
@@ -225,16 +245,12 @@ export default function AvvaMenu() {
   const openCategory = (id: number) => setOpenedCatId(id);
   const backToTiles = () => setOpenedCatId(null);
 
-  // ⚠️ махаме авто-затварянето при търсене – то пречеше да се отвори намерената категория
-  // useEffect(() => {
-  //   if (query.trim()) setOpenedCatId(null);
-  // }, [query]);
-
   const filteredAllergens = useMemo(() => {
     const q = aQuery.trim().toLowerCase();
     if (!q) return allergens;
     return allergens.filter(
-      (a) => a.code.toLowerCase().includes(q) || a.name.toLowerCase().includes(q)
+      (a) =>
+        a.code.toLowerCase().includes(q) || a.name.toLowerCase().includes(q)
     );
   }, [allergens, aQuery]);
 
@@ -407,7 +423,9 @@ export default function AvvaMenu() {
                 placeholder="Търсене в категории и ястия"
                 className="w-full rounded-full border border-black px-4 py-3 pr-11 outline-none focus:ring-2 focus:ring-[#FFC107]"
               />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2">🔎</span>
+              <span className="absolute right-3 top-1/2 -translate-y-1/2">
+                🔎
+              </span>
             </div>
           )}
         </div>
@@ -427,14 +445,20 @@ export default function AvvaMenu() {
                   placeholder="Търсене по код или име…"
                   className="w-full rounded-full border border-black px-4 py-2 pr-11 outline-none focus:ring-2 focus:ring-[#FFC107]"
                 />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2">🔎</span>
+                <span className="absolute right-3 top-1/2 -translate-y-1/2">
+                  🔎
+                </span>
               </div>
             </div>
 
             {loadingAllergens ? (
-              <div className="py-10 text-center text-neutral-500">Зареждане…</div>
+              <div className="py-10 text-center text-neutral-500">
+                Зареждане…
+              </div>
             ) : filteredAllergens.length === 0 ? (
-              <div className="py-10 text-center text-neutral-500">Няма алергени.</div>
+              <div className="py-10 text-center text-neutral-500">
+                Няма алергени.
+              </div>
             ) : (
               <div className="overflow-x-auto rounded-lg border">
                 <table className="min-w-full text-sm">
@@ -448,7 +472,9 @@ export default function AvvaMenu() {
                     {filteredAllergens.map((a, i) => (
                       <tr
                         key={a.id}
-                        className={i % 2 === 0 ? "bg-white" : "bg-neutral-50/60"}
+                        className={
+                          i % 2 === 0 ? "bg-white" : "bg-neutral-50/60"
+                        }
                         title={`${a.code} — ${a.name}`}
                       >
                         <td className="px-3 py-2 font-semibold whitespace-nowrap">
@@ -468,7 +494,9 @@ export default function AvvaMenu() {
         {pill !== "allergens" && openedCatId === null && (
           <>
             {loading && (
-              <div className="py-10 text-center text-neutral-300">Зареждане…</div>
+              <div className="py-10 text-center text-neutral-300">
+                Зареждане…
+              </div>
             )}
             {!loading && filteredTiles.length === 0 && (
               <div className="py-10 text-center text-neutral-300">
@@ -497,7 +525,8 @@ export default function AvvaMenu() {
                     <span
                       className="text-white text-2xl md:text-[28px] font-bold tracking-wide"
                       style={{
-                        textShadow: "0 0 3px #000, 0 0 3px #000, 0 0 3px #000",
+                        textShadow:
+                          "0 0 3px #000, 0 0 3px #000, 0 0 3px #000",
                       }}
                     >
                       {c.name.toUpperCase()}
@@ -521,7 +550,8 @@ export default function AvvaMenu() {
               list = list.filter(
                 (d) =>
                   d.name.toLowerCase().includes(s) ||
-                  (d.description && d.description.toLowerCase().includes(s))
+                  (d.description &&
+                    d.description.toLowerCase().includes(s))
               );
             }
 
@@ -593,7 +623,10 @@ export default function AvvaMenu() {
                   <div className="rounded-2xl overflow-hidden border border-black bg-white">
                     <ul className="divide-y">
                       {list.map((d) => (
-                        <li key={d.id} className="flex items-center gap-3 p-4">
+                        <li
+                          key={d.id}
+                          className="flex items-center gap-3 p-4"
+                        >
                           {!!d.image_url && (
                             <img
                               src={d.image_url}

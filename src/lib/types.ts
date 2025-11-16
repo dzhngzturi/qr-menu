@@ -27,3 +27,30 @@ export type Paginated<T> = {
 };
 
 export type Allergen = { id: number, code: string, name:string, is_active: boolean };
+
+
+// ------------------ TELEMETRY ------------------
+
+export type TelemetryEventByDay = {
+  date: string;
+  qr_scan: number;
+  menu_open: number;
+  search: number;
+};
+
+export type TelemetryTopSearch = {
+  term: string;
+  count: number;
+};
+
+export type TelemetryOverview = {
+  range: { from: string; to: string; days: number };
+  totals: {
+    all: number;
+    qr_scan: number;
+    menu_open: number;
+    search: number;
+  };
+  events_by_day: TelemetryEventByDay[];
+  popular_searches: TelemetryTopSearch[];
+};

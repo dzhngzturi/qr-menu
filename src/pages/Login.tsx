@@ -11,8 +11,8 @@ const schema = z.object({ email: z.string().email(), password: z.string().min(1)
 type LoginResp = {
   token: string;
   is_admin: boolean;
-  user: { id:number; name:string; email:string };
-  restaurant?: { id:number; slug:string; name:string } | null;
+  user: { id: number; name: string; email: string };
+  restaurant?: { id: number; slug: string; name: string } | null;
 };
 
 // ---------- локален lock по email ----------
@@ -50,15 +50,23 @@ export default function Login() {
   // тикер за countdown-а
   useEffect(() => {
     if (!emailVal) { setCooldownLeft(0); return; }
-    const update = () => {
+
+    // Преименувана на checkAndUpdate за по-добра яснота
+    const checkAndUpdate = () => {
       const now = Date.now();
       const until = getLocalLockTs(emailVal);
       const left = Math.max(0, Math.ceil((until - now) / 1000));
       setCooldownLeft(left);
       if (left <= 0) localStorage.removeItem(lockKey(emailVal));
     };
-    update();
-    const id = setInterval(update, 1000);
+
+    checkAndUpdate();
+    
+    // КОРЕКЦИЯТА за CSP: Обвиваме функцията в lambda (стрелкова) функция
+    const id = setInterval(() => {
+      checkAndUpdate();
+    }, 1000);
+
     return () => clearInterval(id);
   }, [emailVal]);
 

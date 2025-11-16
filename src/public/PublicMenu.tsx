@@ -1,25 +1,30 @@
 // src/public/PublicMenu.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";           // ⬅️ добавено
+import { useParams } from "react-router-dom";
 import api from "../lib/api";
 import type { Category, Dish } from "../lib/types";
 import { bgnToEur, fmtBGN, fmtEUR } from "../lib/money";
 import NotFound from "../pages/NotFound";
-import { MenuFooter } from "../components/MenuFooter"
+import { MenuFooter } from "../components/MenuFooter";
+import {
+  logQrScanOnceForSlug,
+  logTelemetry,
+  logSearchDebounced,
+  logSearchImmediate,
+} from "../lib/telemetry";
 
 type Grouped = Record<number, Dish[]>;
 
 export default function PublicMenu() {
-  const { slug } = useParams();                         // ⬅️ slug от /menu/:slug
+  const { slug } = useParams<{ slug: string }>();
   const [cats, setCats] = useState<Category[]>([]);
   const [dishes, setDishes] = useState<Dish[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
   const [activeCat, setActiveCat] = useState<number | null>(null);
-  const [notFound, setNotFound] = useState(false);      // ⬅️ 404 флаг
+  const [notFound, setNotFound] = useState(false);
   const heroUrl = "/cover.jpg";
 
-  // Константи за адрес/телефон – персонализирай по ресторант при нужда
   const ADDRESS = "ул. Васил Левски 115, 7400 Исперих";
   const PHONE_DISPLAY = "089 958 8389";
   const PHONE_TEL = "+359899588389";
@@ -28,13 +33,32 @@ export default function PublicMenu() {
     const q = encodeURIComponent(addr);
     const ua = navigator.userAgent || "";
     const isiOS = /iPad|iPhone|iPod|Macintosh/.test(ua);
-    return isiOS ? `maps://?q=${q}` : `https://www.google.com/maps/search/?api=1&query=${q}`;
+    return isiOS
+      ? `maps://?q=${q}`
+      : `https://www.google.com/maps/search/?api=1&query=${q}`;
   }
 
   const sectionRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
+  /* ---------- ТЕЛЕМЕТРИЯ ---------- */
+
+  // QR scan – веднъж на ден за този ресторант (по устройство) + menu_open всеки път
   useEffect(() => {
-    // ако няма slug в URL → 404
+    if (!slug) return;
+    logQrScanOnceForSlug(slug);
+    logTelemetry("menu_open");
+  }, [slug]);
+
+  // Търсене – debounce (логика вътре в telemetry.ts)
+  useEffect(() => {
+    const q = query.trim();
+    if (!slug || !q) return; // нужни са slug и непразно търсене
+    // вътре в telemetry.ts има 2s debounce + min length 3
+    logSearchDebounced(q, slug);
+  }, [query, slug]);
+
+  /* ---------- Зареждане на данни ---------- */
+  useEffect(() => {
     if (!slug) {
       setNotFound(true);
       setLoading(false);
@@ -52,14 +76,15 @@ export default function PublicMenu() {
         ]);
 
         const catsData: Category[] = cRes.data.data ?? cRes.data;
-        const dishesData: Dish[] = (dRes.data.data ?? dRes.data).filter((d: Dish) => d.is_active);
+        const dishesData: Dish[] = (dRes.data.data ?? dRes.data).filter(
+          (d: Dish) => d.is_active
+        );
 
         const onlyActiveCats = catsData.filter((c) => c.is_active);
         setCats(onlyActiveCats);
         setDishes(dishesData);
         setActiveCat(onlyActiveCats.length ? onlyActiveCats[0].id : null);
 
-        // ако няма нито една активна категория → 404 (по избор)
         if (!onlyActiveCats.length) setNotFound(true);
 
         setLoading(false);
@@ -129,7 +154,6 @@ export default function PublicMenu() {
     return () => io.disconnect();
   }, [cats, filteredGrouped]);
 
-  // 🔴 ако slug е грешен/липсва или бекендът върне 404/422
   if (notFound) return <NotFound />;
 
   return (
@@ -138,7 +162,9 @@ export default function PublicMenu() {
       <header className="bg-neutral-900/95  top-0 z-30 border-b border-white/10">
         <div className="max-w-5xl mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-semibold tracking-wide">VIVA bar&dinner</h1>
+            <h1 className="text-2xl font-semibold tracking-wide">
+              VIVA bar&dinner
+            </h1>
           </div>
 
           <div className="mt-2 text-sm text-white/70 flex flex-wrap gap-x-4 gap-y-1">
@@ -151,7 +177,10 @@ export default function PublicMenu() {
               title="Навигирай в карти"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" className="opacity-70">
-                <path fill="currentColor" d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7m0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" />
+                <path
+                  fill="currentColor"
+                  d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7m0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"
+                />
               </svg>
               {ADDRESS}
             </a>
@@ -165,7 +194,10 @@ export default function PublicMenu() {
               title="Обади се"
             >
               <svg width="16" height="16" viewBox="0 0 24 24" className="opacity-70">
-                <path fill="currentColor" d="M20 15.5c-1.25 0-2.47-.2-3.6-.58a1 1 0 0 0-1 .25l-2.2 2.2a15.05 15.05 0 0 1-6.58-6.58l2.2-2.2a1 1 0 0 0 .25-1c-.38-1.13-.58-2.35-.58-3.6A1 1 0 0 0 7.5 2h-3A1.5 1.5 0 0 0 3 3.5 17.5 17.5 0 0 0 20.5 21a1.5 1.5 0 0 0 1.5-1.5v-3a1 1 0 0 0-1-1Z" />
+                <path
+                  fill="currentColor"
+                  d="M20 15.5c-1.25 0-2.47-.2-3.6-.58a1 1 0 0 0-1 .25l-2.2 2.2a15.05 15.05 0 0 1-6.58-6.58l2.2-2.2a1 1 0 0 0 .25-1c-.38-1.13-.58-2.35-.58-3.6A1 1 0 0 0 7.5 2h-3A1.5 1.5 0 0 0 3 3.5 17.5 17.5 0 0 0 20.5 21a1.5 1.5 0 0 0 1.5-1.5v-3a1 1 0 0 0-1-1Z"
+                />
               </svg>
               {PHONE_DISPLAY}
             </a>
@@ -174,7 +206,12 @@ export default function PublicMenu() {
           {/* HERO банер */}
           <div className="mt-3 relative rounded-2xl overflow-hidden h-40 md:h-52 border border-white/10">
             <div className="relative w-full h-[240px] md:h-[280px] lg:h-[320px] rounded-2xl border border-white/10 overflow-hidden">
-              <img src={heroUrl} alt="" className="absolute inset-0 w-full h-full object-cover" style={{ objectPosition: "center 75%" }} />
+              <img
+                src={heroUrl}
+                alt=""
+                className="absolute inset-0 w-full h-full object-cover"
+                style={{ objectPosition: "center 75%" }}
+              />
               <div className="absolute inset-0 bg-black/25" />
             </div>
 
@@ -204,19 +241,37 @@ export default function PublicMenu() {
           {/* Търсачка */}
           <div className="mt-4 relative">
             <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Търсене"
               className="w-full bg-neutral-800/70 border border-white/10 rounded-xl py-3 pl-4 pr-10 outline-none focus:ring-2 focus:ring-white/20"
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value); // само state, логиката за логване е в useEffect
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  const q = query.trim();
+                  if (slug && q) {
+                    // моментално изпращане при Enter
+                    logSearchImmediate(q, slug);
+                  }
+                  e.currentTarget.blur();
+                }
+              }}
+              placeholder="Търсене..."
             />
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40">🔎</span>
+
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40">
+              🔎
+            </span>
           </div>
         </div>
       </header>
 
       {/* Секции */}
       <main className="max-w-5xl mx-auto px-4 pb-24">
-        {loading && <div className="py-10 text-center text-white/60">Зареждане…</div>}
+        {loading && (
+          <div className="py-10 text-center text-white/60">Зареждане…</div>
+        )}
 
         {!loading &&
           cats.map((c) => {
@@ -235,7 +290,11 @@ export default function PublicMenu() {
                 <div className="rounded-2xl overflow-hidden bg-neutral-800/60 border border-white/10">
                   {c.image_url ? (
                     <div className="h-52 md:h-64 w-full relative">
-                      <img src={c.image_url} loading="lazy" className="h-full w-full object-cover" />
+                      <img
+                        src={c.image_url}
+                        loading="lazy"
+                        className="h-full w-full object-cover"
+                      />
                       <div className="absolute inset-0 bg-black/40" />
                       <div className="absolute inset-x-0 bottom-0 p-4">
                         <h2 className="text-2xl md:text-3xl font-bold drop-shadow">
@@ -245,28 +304,41 @@ export default function PublicMenu() {
                     </div>
                   ) : (
                     <div className="p-4">
-                      <h2 className="text-xl md:text-2xl font-bold">{c.name}</h2>
+                      <h2 className="text-xl md:text-2xl font-bold">
+                        {c.name}
+                      </h2>
                     </div>
                   )}
 
                   <ul className="divide-y divide-white/5">
                     {list.map((d) => (
-                      <li key={d.id} className="flex items-center gap-3 p-4 hover:bg-white/5 transition">
+                      <li
+                        key={d.id}
+                        className="flex items-center gap-3 p-4 hover:bg-white/5 transition"
+                      >
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
-                            <h3 className="text-[18px] font-medium">{d.name}</h3>
+                            <h3 className="text-[18px] font-medium">
+                              {d.name}
+                            </h3>
                             {!d.is_active && (
-                              <span className="text-xs text-white/50 uppercase tracking-wide">недостъпно</span>
+                              <span className="text-xs text-white/50 uppercase tracking-wide">
+                                недостъпно
+                              </span>
                             )}
                           </div>
                           {d.description && (
-                            <p className="text-sm text-white/70 mt-0.5">{d.description}</p>
+                            <p className="text-sm text-white/70 mt-0.5">
+                              {d.description}
+                            </p>
                           )}
 
                           {!!d.price && (
                             <div className="text-sm font-semibold mt-1">
                               <div>{fmtBGN.format(d.price)}</div>
-                              <div className="opacity-70">({fmtEUR.format(bgnToEur(d.price))})</div>
+                              <div className="opacity-70">
+                                ({fmtEUR.format(bgnToEur(d.price))})
+                              </div>
                             </div>
                           )}
                         </div>
@@ -277,7 +349,12 @@ export default function PublicMenu() {
                             className="h-16 w-16 rounded-xl object-cover border border-white/10"
                           />
                         )}
-                        <svg width="18" height="18" viewBox="0 0 24 24" className="text-white/30">
+                        <svg
+                          width="18"
+                          height="18"
+                          viewBox="0 0 24 24"
+                          className="text-white/30"
+                        >
                           <path fill="currentColor" d="M9 18l6-6-6-6" />
                         </svg>
                       </li>

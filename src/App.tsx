@@ -15,6 +15,7 @@ import Profile from "./pages/Profile";
 
 // ВАЖНО: един общ AuthProvider
 import { AuthProvider } from "./context/AuthContext";
+import Telemetry from "./pages/Telemetry";
 
 export default function App() {
   return (
@@ -57,6 +58,7 @@ export default function App() {
             </Protected>
           }
         >
+          <Route path="telemetry" element={<Telemetry />} /> 
           <Route index element={<Navigate to="categories" replace />} />
           <Route path="categories" element={<Categories />} />
           <Route path="dishes" element={<Dishes />} />
