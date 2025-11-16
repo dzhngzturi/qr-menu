@@ -1,6 +1,7 @@
 // src/lib/api.ts
 import axios, { AxiosHeaders, type AxiosRequestConfig } from "axios";
 import { toast } from "react-hot-toast";
+import type { TelemetryOverview } from "./types";
 
 /* ---------- helpers ---------- */
 function getRestaurantSlug(): string | undefined {
@@ -96,5 +97,13 @@ api.interceptors.response.use(
     return Promise.reject(err);
   }
 );
+
+// GET /telemetry/overview
+export async function getTelemetryOverview(slug: string, days: number) {
+  const res = await api.get<TelemetryOverview>("/telemetry/overview", {
+    params: { restaurant: slug, days },
+  });
+  return res.data;
+}
 
 export default api;
