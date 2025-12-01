@@ -6,7 +6,7 @@ export const TELEMETRY_ENABLED_FOR = new Set<string>([
   //"viva",
   //"avva",
   // добавяй тук други slug-ове
-
+  "eres",
   
 ]);
 

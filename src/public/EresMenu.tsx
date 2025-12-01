@@ -15,7 +15,7 @@ import {
 
 type Grouped = Record<number, Dish[]>;
 
-export default function FamilyRestaurantMenu() {
+export default function EresMenu() {
     const { slug } = useParams<{ slug: string }>();
     const [cats, setCats] = useState<Category[]>([]);
     const [dishes, setDishes] = useState<Dish[]>([]);
@@ -27,10 +27,10 @@ export default function FamilyRestaurantMenu() {
     // ✅ НОВО: за отваряне на снимка на ястие
     const [lightboxImage, setLightboxImage] = useState<string | null>(null);
 
-    // 👉 смени тези стойности с реалните ти данни
+    // смени тези стойности с реалните ти данни
     const RESTAURANT_NAME_LINE1 = "Bistro";
     const RESTAURANT_NAME_LINE2 = "ER & ES";
-    const RESTAURANT_NAME = "Bistro ER & ES";
+    // const RESTAURANT_NAME = "Bistro ER & ES";
     const ADDRESS = "23 1970, 7425 Тодорово";
     const PHONE_DISPLAY = "089 532 5933";
     const PHONE_TEL = "+359895325933";
