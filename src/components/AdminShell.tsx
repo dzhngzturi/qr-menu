@@ -150,7 +150,7 @@ export default function AdminShell() {
   const quickSlugRef = useRef<HTMLInputElement>(null);
 
   // кои ресторанти да скрием Алергените
-  const HIDE_ALLERGENS_FOR = new Set<string>(["viva"]);
+  const HIDE_ALLERGENS_FOR = new Set<string>(["viva","eres"]);
   const shouldShowAllergens = (slug?: string | null) =>
     !!slug && !HIDE_ALLERGENS_FOR.has(slug.toLowerCase());
 
