@@ -1,4 +1,4 @@
-// src/public/FamilyRestaurantMenu.tsx
+// src/public/EresMenu.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import api from "../lib/api";
@@ -8,7 +8,7 @@ import NotFound from "../pages/NotFound";
 import { MenuFooter } from "../components/MenuFooter";
 import {
     logQrScanOnceForSlug,
-    logTelemetry,
+    logMenuOpenForSlug,
     logSearchDebounced,
     logSearchImmediate,
 } from "../lib/telemetry";
@@ -24,7 +24,7 @@ export default function EresMenu() {
     const [activeCat, setActiveCat] = useState<number | null>(null);
     const [notFound, setNotFound] = useState(false);
 
-    // ✅ НОВО: за отваряне на снимка на ястие
+    // ✅ за отваряне на снимка на ястие
     const [lightboxImage, setLightboxImage] = useState<string | null>(null);
 
     // смени тези стойности с реалните ти данни
@@ -48,12 +48,18 @@ export default function EresMenu() {
 
     /* ---------- ТЕЛЕМЕТРИЯ ---------- */
 
+    // QR scan + отваряне на менюто (както при AvvaMenu)
     useEffect(() => {
         if (!slug) return;
+
+        // веднъж на ден на устройство за този ресторант
         logQrScanOnceForSlug(slug);
-        logTelemetry("menu_open");
+
+        // всяко зареждане на менюто
+        logMenuOpenForSlug(slug);
     }, [slug]);
 
+    // търсене – дебоунснато
     useEffect(() => {
         const q = query.trim();
         if (!slug || !q) return;
@@ -99,7 +105,6 @@ export default function EresMenu() {
                 setCats(onlyActiveCats);
                 setDishes(dishesData);
                 setActiveCat(onlyActiveCats.length ? onlyActiveCats[0].id : null);
-
 
                 if (!onlyActiveCats.length) setNotFound(true);
 
@@ -165,7 +170,7 @@ export default function EresMenu() {
         if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 
-    /* ---------- AUTO-HIGHLIGHT ПРИ СКРОЛ (по-скоро за режим с търсене) ---------- */
+    /* ---------- AUTO-HIGHLIGHT ПРИ СКРОЛ ---------- */
 
     useEffect(() => {
         if (!visibleCats.length) return;
@@ -194,12 +199,12 @@ export default function EresMenu() {
     if (notFound) return <NotFound />;
 
     return (
-        <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col">
+        <div
+            className="min-h-screen text-slate-900 flex flex-col">
             {/* HEADER */}
             <header className="bg-white border-b border-slate-200">
                 <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
                     <div className="flex items-center gap-3">
-
                         {/* LOGO LEFT */}
                         <img
                             src="/eres-logo.png"
@@ -217,10 +222,7 @@ export default function EresMenu() {
                                 <span className="block md:inline">{RESTAURANT_NAME_LINE2}</span>
                             </h1>
                         </div>
-
                     </div>
-
-
                 </div>
             </header>
 
@@ -229,6 +231,8 @@ export default function EresMenu() {
                 <div className="max-w-6xl mx-auto px-4 py-3">
                     <div className="relative">
                         <input
+                            id="menu_search"
+                            name="menu_search"
                             className="w-full border border-slate-300 rounded-full py-2.5 pl-4 pr-10 text-sm outline-none focus:ring-2 focus:ring-slate-300 focus:border-slate-400 bg-slate-50"
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
@@ -253,12 +257,10 @@ export default function EresMenu() {
 
             {/* MAIN */}
             <main className="flex-1 pb-10">
-
                 <div className="max-w-6xl mx-auto px-4 py-4 grid grid-cols-1 md:grid-cols-[minmax(240px,280px)_minmax(0,1fr)] gap-4">
                     {/* SIDEBAR */}
                     <aside className="space-y-4">
                         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-col items-start gap-3">
-
                             {/* LOGO */}
                             <img
                                 src="/eres-logo.png"
@@ -299,7 +301,7 @@ export default function EresMenu() {
 
                                 {/* FACEBOOK */}
                                 <a
-                                    href="https://facebook.com/yourpage"
+                                    href="https://www.facebook.com/people/%D0%91%D0%B8%D1%81%D1%82%D1%80%D0%BE-%D0%9C%D0%B0%D0%B3%D0%B0%D0%B7%D0%B8%D0%BD-%D0%B5%D1%80%D0%B5%D1%81/100054468309366"
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="inline-flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700"
@@ -312,7 +314,7 @@ export default function EresMenu() {
 
                                 {/* INSTAGRAM */}
                                 <a
-                                    href="https://instagram.com/yourpage"
+                                    href="https://www.instagram.com/bistro.eres"
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="inline-flex items-center gap-1 text-sm text-pink-600 hover:text-pink-700"
@@ -326,7 +328,8 @@ export default function EresMenu() {
 
                             {/* EXTRA TEXT */}
                             <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                                За резервации и запитвания – последвайте ни в социалните мрежи или се свържете директно с нашия екип.
+                                За резервации и запитвания – последвайте ни в социалните мрежи или се
+                                свържете директно с нашия екип.
                             </p>
                         </div>
 
@@ -391,9 +394,7 @@ export default function EresMenu() {
                                         )}
 
                                         {!c.image_url && (
-                                            <h2 className="text-lg font-semibold mb-4">
-                                                {c.name}
-                                            </h2>
+                                            <h2 className="text-lg font-semibold mb-4">{c.name}</h2>
                                         )}
 
                                         {/* ПРОДУКТИТЕ ПОД БАНЕРА */}
@@ -408,7 +409,7 @@ export default function EresMenu() {
                                                             src={d.image_url}
                                                             loading="lazy"
                                                             className="h-14 w-14 rounded-lg object-cover border border-slate-200 flex-shrink-0 cursor-pointer"
-                                                            onClick={() => setLightboxImage(d.image_url!)} // ✅ НОВО
+                                                            onClick={() => setLightboxImage(d.image_url!)} // ✅ lightbox
                                                         />
                                                     )}
 
@@ -434,12 +435,13 @@ export default function EresMenu() {
 
                                                             {!!d.price && (
                                                                 <div className="text-right text-xs font-semibold text-slate-900 whitespace-nowrap">
-                                                                    <div>{fmtBGN.format(d.price)}</div>
+                                                                    <div>{fmtEUR.format(bgnToEur(d.price))}</div>
                                                                     <div className="text-[11px] text-slate-500">
-                                                                        ({fmtEUR.format(bgnToEur(d.price))})
+                                                                        ({fmtBGN.format(d.price)})
                                                                     </div>
                                                                 </div>
                                                             )}
+
                                                         </div>
                                                     </div>
                                                 </li>
@@ -452,7 +454,7 @@ export default function EresMenu() {
                 </div>
             </main>
 
-            {/* ✅ НОВО: прост lightbox за снимката на ястие */}
+            {/* ✅ прост lightbox за снимката на ястие */}
             {lightboxImage && (
                 <div
                     className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center px-4"

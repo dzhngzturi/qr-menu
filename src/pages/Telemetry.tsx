@@ -1,46 +1,43 @@
 // src/pages/Telemetry.tsx
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { getTelemetryOverview } from "../lib/api";
+import { apiAdmin } from "../lib/api";
 import type { TelemetryOverview } from "../lib/types";
 import { isTelemetryEnabledSlug } from "../lib/telemetry-config";
 
 /**
  * Страница Телеметрия за /admin/r/:slug/telemetry
- *
- * НЯМА localStorage – решаваме само по slug от URL
- * и по allow-list-а в telemetry-config.ts.
+ * ВАЖНО: ползваме apiAdmin (=> /api/admin), за да няма достъп между ресторанти.
  */
 export default function Telemetry() {
   const { slug } = useParams<{ slug: string }>();
 
-  // дали въобще този ресторант има разрешена телеметрия (frontend allow-list)
+  // allow-list за фронтенд (само UI)
   const telemetryEnabled = isTelemetryEnabledSlug(slug ?? null);
 
   const [data, setData] = useState<TelemetryOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [days, setDays] = useState(7);
 
-  // ако телеметрията е изключена за този slug – НЕ пращаме заявки към API-то
   useEffect(() => {
-    // няма slug или е забранен -> чистим и спираме
     if (!slug || !telemetryEnabled) {
       setData(null);
       setLoading(false);
       return;
     }
 
-    // тук вече сме сигурни, че slug е string -> казваме го изрично на TS
-    const safeSlug = slug as string;
-
     let cancelled = false;
 
     async function load() {
       try {
         setLoading(true);
-        // 🔹 подаваме и slug, и days
-        const res = await getTelemetryOverview(safeSlug, days);
-        if (!cancelled) setData(res);
+
+        // ✅ admin protected endpoint
+        const res = await apiAdmin.get<TelemetryOverview>("/telemetry/overview", {
+          params: { restaurant: slug, days },
+        });
+
+        if (!cancelled) setData(res.data);
       } catch (e) {
         if (cancelled) return;
         console.error("Telemetry overview error", e);
@@ -62,14 +59,11 @@ export default function Telemetry() {
       month: "2-digit",
     });
 
-  // ⚠️ Телеметрията е изключена за този ресторант (по slug)
   if (!telemetryEnabled) {
     return (
       <div className="space-y-2">
         <h1 className="text-xl font-semibold">Телеметрия</h1>
-        <p className="text-sm text-gray-500">
-          Телеметрията не е активирана за този ресторант.
-        </p>
+        <p className="text-sm text-gray-500">Телеметрията не е активирана за този ресторант.</p>
       </div>
     );
   }
@@ -130,34 +124,18 @@ export default function Telemetry() {
           </div>
 
           <div className="mt-6 md:mt-0 md:w-1/2 md:pl-8">
-            <h2 className="text-sm font-semibold text-gray-700 mb-4">
-              Разпределение
-            </h2>
+            <h2 className="text-sm font-semibold text-gray-700 mb-4">Разпределение</h2>
             <div className="space-y-2 text-sm">
-              <LegendRow
-                colorClass="bg-amber-500"
-                label="QR сканирания"
-                value={totals.qr_scan}
-              />
-              <LegendRow
-                colorClass="bg-sky-500"
-                label="Отваряния меню"
-                value={totals.menu_open}
-              />
-              <LegendRow
-                colorClass="bg-rose-500"
-                label="Търсения"
-                value={totals.search}
-              />
+              <LegendRow colorClass="bg-amber-500" label="QR сканирания" value={totals.qr_scan} />
+              <LegendRow colorClass="bg-sky-500" label="Отваряния меню" value={totals.menu_open} />
+              <LegendRow colorClass="bg-rose-500" label="Търсения" value={totals.search} />
             </div>
           </div>
         </div>
 
         {/* Център: таблица „Ритъм по дни“ */}
         <div className="rounded-2xl border bg-white p-6 shadow-sm">
-          <h2 className="text-sm font-semibold text-gray-700 mb-4">
-            Ритъм по дни ({days} дни)
-          </h2>
+          <h2 className="text-sm font-semibold text-gray-700 mb-4">Ритъм по дни ({days} дни)</h2>
 
           {!data ? (
             <p className="text-sm text-gray-400">Зареждане...</p>
@@ -198,9 +176,7 @@ export default function Telemetry() {
 
         {/* Дясно: популярни търсения */}
         <div className="rounded-2xl border bg-white p-6 shadow-sm flex flex-col">
-          <h2 className="text-sm font-semibold text-gray-700 mb-4">
-            Популярни търсения
-          </h2>
+          <h2 className="text-sm font-semibold text-gray-700 mb-4">Популярни търсения</h2>
 
           {!data || data.popular_searches.length === 0 ? (
             <p className="text-sm text-gray-400">Все още няма данни.</p>
@@ -243,11 +219,7 @@ function LegendRow({ colorClass, label, value }: LegendRowProps) {
   );
 }
 
-function DonutChart({
-  totals,
-}: {
-  totals: { qr_scan: number; menu_open: number; search: number };
-}) {
+function DonutChart({ totals }: { totals: { qr_scan: number; menu_open: number; search: number } }) {
   const totalSum = totals.qr_scan + totals.menu_open + totals.search;
   const safeSum = totalSum || 1;
 

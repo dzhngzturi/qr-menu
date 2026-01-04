@@ -7,6 +7,7 @@ import type { TelemetryOverview } from "./types";
 function getRestaurantSlug(): string | undefined {
   const mAdmin = window.location.pathname.match(/\/admin\/r\/([^/]+)/);
   if (mAdmin?.[1]) return mAdmin[1];
+
   const mMenu = window.location.pathname.match(/\/menu\/([^/]+)/);
   if (mMenu?.[1]) return mMenu[1];
 
@@ -17,21 +18,27 @@ function getRestaurantSlug(): string | undefined {
   );
 }
 
+/** normalize url for checks (remove base, ensure no leading slash) */
+function normUrl(url: string) {
+  return (url || "").replace(/^\/+/, "");
+}
+
+/**
+ * Public GET: allow unauthenticated only for menu endpoints.
+ * (Admin lists MUST go through /admin/* pages with auth.)
+ */
 const isPublicGet = (method: AxiosRequestConfig["method"], url: string) => {
   const m = (method || "get").toUpperCase();
   if (m !== "GET") return false;
-  // публични пътища: /menu, /categories, /dishes, /allergens
-  return /^\/(menu|categories|dishes|allergens)\b/.test(url);
+
+  const u = normUrl(url);
+  // публично оставяме само menu endpoints
+  return /^menu\b/.test(u);
 };
 
 const fallbackBase = `http://${window.location.hostname}:8000/api`;
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || fallbackBase).replace(/\/+$/, "");
-
-/* ---------- axios client ---------- */
-const api = axios.create({
-  baseURL: API_BASE,
-  headers: { Accept: "application/json" },
-});
+const ADMIN_BASE = `${API_BASE}/admin`;
 
 /* ---------- safe header setters for Axios v1 ---------- */
 function setHeader(headers: AxiosRequestConfig["headers"], key: string, val: string) {
@@ -52,55 +59,84 @@ function deleteHeader(headers: AxiosRequestConfig["headers"], key: string) {
   }
 }
 
-/* ---------- interceptors ---------- */
-api.interceptors.request.use((config) => {
-  const url = config.url || "";
-  const method = config.method;
-
-  // 1) Authorization само ако НЕ е публичен GET
-  const token = localStorage.getItem("token");
-  if (token && !isPublicGet(method, url)) {
-    setHeader(config.headers, "Authorization", `Bearer ${token}`);
-  } else {
-    deleteHeader(config.headers, "Authorization");
+/* ---------- interceptors builder ---------- */
+function attachInterceptors(
+  client: ReturnType<typeof axios.create>,
+  opts?: {
+    /** always attach Authorization when token exists */
+    alwaysAuth?: boolean;
   }
+) {
+  client.interceptors.request.use((config) => {
+    const url = config.url || "";
+    const method = config.method;
 
-  // 2) Авто ?restaurant=:slug (извън platform/auth)
-  const isPlatform = url.startsWith("/platform") || url.includes("/platform/");
-  const isAuth = url.startsWith("/auth") || url.includes("/auth/");
+    // 1) Authorization
+    const token = localStorage.getItem("token");
+    if (token && (opts?.alwaysAuth || !isPublicGet(method, url))) {
+      setHeader(config.headers, "Authorization", `Bearer ${token}`);
+    } else {
+      deleteHeader(config.headers, "Authorization");
+    }
 
-  if (!isPlatform && !isAuth) {
-    const alreadyHasParam =
-      (config.params && Object.prototype.hasOwnProperty.call(config.params, "restaurant")) ||
-      (typeof config.url === "string" && /[?&]restaurant=/.test(config.url));
+    // 2) Авто ?restaurant=:slug (извън platform/auth)
+    const u = normUrl(url);
 
-    if (!alreadyHasParam) {
-      const slug = getRestaurantSlug();
-      if (slug) {
-        config.params = { ...(config.params || {}), restaurant: slug };
+    // ВАЖНО: тук проверяваме и варианти без "/"
+    const isPlatform = u.startsWith("platform") || u.includes("/platform/");
+    const isAuth = u.startsWith("auth") || u.includes("/auth/");
+
+    if (!isPlatform && !isAuth) {
+      const alreadyHasParam =
+        (config.params && Object.prototype.hasOwnProperty.call(config.params, "restaurant")) ||
+        (typeof config.url === "string" && /[?&]restaurant=/.test(config.url));
+
+      if (!alreadyHasParam) {
+        const slug = getRestaurantSlug();
+        if (slug) {
+          config.params = { ...(config.params || {}), restaurant: slug };
+        }
       }
     }
-  }
 
-  return config;
+    return config;
+  });
+
+  client.interceptors.response.use(
+    (res) => res,
+    (err) => {
+      const msg =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        err?.response?.data?.errors?.[0] ||
+        "Възникна грешка. Опитайте отново.";
+      toast.error(String(msg));
+      return Promise.reject(err);
+    }
+  );
+}
+
+/* ---------- axios clients ---------- */
+
+// Public / normal client -> base: /api
+const api = axios.create({
+  baseURL: API_BASE,
+  headers: { Accept: "application/json" },
 });
+attachInterceptors(api, { alwaysAuth: false });
 
-api.interceptors.response.use(
-  (res) => res,
-  (err) => {
-    const msg =
-      err?.response?.data?.message ||
-      err?.response?.data?.error ||
-      err?.response?.data?.errors?.[0] ||
-      "Възникна грешка. Опитайте отново.";
-    toast.error(String(msg));
-    return Promise.reject(err);
-  }
-);
+// ✅ Admin client -> base: /api/admin (НЕ /api)
+export const apiAdmin = axios.create({
+  baseURL: ADMIN_BASE,
+  headers: { Accept: "application/json" },
+});
+attachInterceptors(apiAdmin, { alwaysAuth: true });
 
-// GET /telemetry/overview
+/* ---------- helpers ---------- */
+
+// GET /admin/telemetry/overview (admin protected in backend group)
 export async function getTelemetryOverview(slug: string, days: number) {
-  const res = await api.get<TelemetryOverview>("/telemetry/overview", {
+  const res = await apiAdmin.get<TelemetryOverview>("telemetry/overview", {
     params: { restaurant: slug, days },
   });
   return res.data;

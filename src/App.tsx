@@ -16,6 +16,7 @@ import Profile from "./pages/Profile";
 // ВАЖНО: един общ AuthProvider
 import { AuthProvider } from "./context/AuthContext";
 import Telemetry from "./pages/Telemetry";
+import AdminRestaurantGuard from "./components/AdminRestaurantGuard";
 
 export default function App() {
   return (
@@ -54,7 +55,9 @@ export default function App() {
           path="/admin/r/:slug"
           element={
             <Protected>
+              <AdminRestaurantGuard>
               <AdminShell />
+              </AdminRestaurantGuard>
             </Protected>
           }
         >

@@ -1,11 +1,23 @@
 // src/pages/Dishes.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
-import api from "../lib/api";
 import type { Category, Dish, Paginated } from "../lib/types";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { toast } from "react-hot-toast";
 import { useConfirm } from "../components/ConfirmProvider";
 import { bgnToEur, fmtBGN, fmtEUR } from "../lib/money";
+
+// ✅ shared select
+import AppSelect from "../components/AppSelect";
+
+// ✅ services (admin-safe via apiAdmin вътре)
+import {
+  fetchDishes,
+  createDish,
+  updateDish,
+  deleteDish,
+  reorderDishes,
+} from "../services/dishes";
+import { fetchCategories } from "../services/categories";
 
 // dnd-kit
 import {
@@ -13,6 +25,7 @@ import {
   closestCenter,
   type DragEndEvent,
   PointerSensor,
+  TouchSensor,
   KeyboardSensor,
   useSensor,
   useSensors,
@@ -35,6 +48,8 @@ type FormVals = {
   image?: FileList;
 };
 
+type SelectOption<T extends string | number> = { value: T; label: string };
+
 function SortableRow({
   d,
   onEdit,
@@ -46,7 +61,11 @@ function SortableRow({
   onDelete: (id: number, name: string) => void;
   disableAll: boolean;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: d.id });
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
+    id: d.id,
+    disabled: disableAll, // ✅ ако UI е busy, не позволявай drag
+  });
+
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -55,13 +74,23 @@ function SortableRow({
 
   return (
     <tr ref={setNodeRef} style={style} className="border-t bg-white">
-      <td
-        className={`p-2 w-8 select-none text-gray-500 ${disableAll ? "cursor-not-allowed opacity-60" : "cursor-grab"}`}
-        title={disableAll ? "Заето..." : "Влачѝ"}
-        {...(!disableAll ? { ...attributes, ...listeners } : {})}
-      >
-        ⋮⋮
+      <td className="p-2 w-10 text-gray-500">
+        {/* ✅ Mobile-friendly drag handle */}
+        <button
+          type="button"
+          className={`select-none inline-flex items-center justify-center rounded border px-2 py-2 leading-none ${
+            disableAll ? "opacity-60 cursor-not-allowed" : "cursor-grab active:cursor-grabbing"
+          }`}
+          title={disableAll ? "Заето..." : "Влачѝ"}
+          // ✅ ключово за mobile: спира scroll-a да “изяжда” жеста
+          style={{ touchAction: "none" }}
+          disabled={disableAll}
+          {...(!disableAll ? { ...attributes, ...listeners } : {})}
+        >
+          ⋮⋮
+        </button>
       </td>
+
       <td className="p-2 text-[16px]">{d.name}</td>
       <td className="p-2 text-center text-[16px]">{d.category?.name ?? d.category?.id}</td>
       <td className="p-2 text-center text-[16px]">
@@ -69,24 +98,31 @@ function SortableRow({
         <div className="opacity-70">({fmtEUR.format(bgnToEur(d.price))})</div>
       </td>
       <td style={{ width: "5rem" }} className="p-2">
-        {d.image_url ? <img src={d.image_url} className="h-10 w-16 object-cover rounded border" /> : "-"}
+        {d.image_url ? (
+          <img src={d.image_url} className="h-10 w-16 object-cover rounded border" />
+        ) : (
+          "-"
+        )}
       </td>
       <td className="p-2 text-center text-[16px]">{d.is_active ? "✓" : "—"}</td>
-      <td className="p-2 text-right">
-        <button
-          className={`px-2 py-1 border rounded mr-2 ${disableAll ? "opacity-60 cursor-not-allowed" : ""}`}
-          disabled={disableAll}
-          onClick={() => onEdit(d)}
-        >
-          Редакция
-        </button>
-        <button
-          className={`px-2 py-1 border rounded ${disableAll ? "opacity-60 cursor-not-allowed" : ""}`}
-          disabled={disableAll}
-          onClick={() => onDelete(d.id, d.name)}
-        >
-          Изтрий
-        </button>
+      <td className="p-2">
+        <div className="flex justify-end items-center gap-2 whitespace-nowrap">
+          <button
+            className={`px-2 py-1 border rounded ${disableAll ? "opacity-60 cursor-not-allowed" : ""}`}
+            disabled={disableAll}
+            onClick={() => onEdit(d)}
+          >
+            Редакция
+          </button>
+
+          <button
+            className={`px-2 py-1 border rounded ${disableAll ? "opacity-60 cursor-not-allowed" : ""}`}
+            disabled={disableAll}
+            onClick={() => onDelete(d.id, d.name)}
+          >
+            Изтрий
+          </button>
+        </div>
       </td>
     </tr>
   );
@@ -96,14 +132,26 @@ export default function Dishes() {
   const [data, setData] = useState<Paginated<Dish> | null>(null);
   const [cats, setCats] = useState<Category[]>([]);
   const [loading, setLoading] = useState(false);
-  const [query, setQuery] = useState<{ page: number; category_id?: number; search?: string }>({ page: 1 });
+  const [query, setQuery] = useState<{ page: number; category_id?: number; search?: string }>({
+    page: 1,
+  });
   const [editing, setEditing] = useState<Dish | null>(null);
-  const [uiBusy, setUiBusy] = useState(false); // 👈 глобален lock
+  const [uiBusy, setUiBusy] = useState(false);
   const confirm = useConfirm();
 
-  // dnd sensors
+  // ✅ DnD sensors (desktop + mobile)
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    // Desktop mouse
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 6 },
+    }),
+    // Mobile touch - по-стабилно (малък delay, за да не “краде” scroll-а)
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 140,
+        tolerance: 6,
+      },
+    }),
     useSensor(KeyboardSensor)
   );
 
@@ -112,6 +160,7 @@ export default function Dishes() {
 
   const {
     register,
+    control,
     handleSubmit,
     reset,
     watch,
@@ -121,26 +170,34 @@ export default function Dishes() {
     mode: "onChange",
     defaultValues: { name: "", price: 0, is_active: true, category_id: 0, description: "" },
   });
-  const watchPrice = watch("price");
 
-  const disableAll = uiBusy || isSubmitting; // общ флаг за бутони
+  const watchPrice = watch("price");
+  const disableAll = uiBusy || isSubmitting;
+
+  const categoryOptions = useMemo<SelectOption<number>[]>(() => {
+    return cats.map((c) => ({ value: c.id, label: c.name }));
+  }, [cats]);
+
+  const filterCategoryOptions = useMemo<SelectOption<number | -1>[]>(() => {
+    return [{ value: -1, label: "Всички" }, ...cats.map((c) => ({ value: c.id, label: c.name }))];
+  }, [cats]);
 
   async function load(page = 1) {
     setLoading(true);
-    const params = new URLSearchParams();
-    params.set("page", String(page));
-    if (query.category_id) params.set("category_id", String(query.category_id));
-    if (query.search) params.set("search", query.search);
-    params.set("sort", "position,name"); // важно: да виждаме реда по position
-
     try {
       const [dRes, cRes] = await Promise.all([
-        api.get(`/dishes?${params.toString()}`),
-        api.get(`/categories?only_active=1&sort=position,name`),
+        fetchDishes({
+          page,
+          sort: "position,name",
+          category_id: query.category_id,
+          search: query.search,
+        }),
+        fetchCategories({ only_active: 1, sort: "position,name", page: 1 }),
       ]);
-      setData(dRes.data);
-      setCats(cRes.data.data);
-      setRows((dRes.data?.data as Dish[]) ?? []);
+
+      setData(dRes);
+      setCats(cRes.data ?? []);
+      setRows(dRes.data ?? []);
     } finally {
       setLoading(false);
     }
@@ -151,12 +208,38 @@ export default function Dishes() {
     // eslint-disable-next-line
   }, [query.page, query.category_id, query.search]);
 
+  // ---------- Image preview / remove ----------
+  const [preview, setPreview] = useState<string | null>(null);
+  const [removeImage, setRemoveImage] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+  const imageRegister = register("image");
+
+  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    setRemoveImage(false);
+    if (preview) URL.revokeObjectURL(preview);
+    if (!file) {
+      setPreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPreview(url);
+  }
+
+  function clearPreview(markToRemove: boolean) {
+    if (preview) URL.revokeObjectURL(preview);
+    setPreview(null);
+    if (imageInputRef.current) imageInputRef.current.value = "";
+    resetField("image");
+    setRemoveImage(markToRemove);
+  }
+
   const onEdit = (d: Dish) => {
     setEditing(d);
     reset({
       id: d.id,
       name: d.name,
-      category_id: d.category.id,
+      category_id: d.category?.id ?? 0,
       description: d.description ?? "",
       price: d.price,
       is_active: d.is_active,
@@ -168,25 +251,40 @@ export default function Dishes() {
   };
 
   const onSubmit = async (v: FormVals) => {
-    const form = new FormData();
-    form.append("name", v.name);
-    form.append("price", String(v.price));
-    form.append("category_id", String(v.category_id));
-    form.append("description", v.description ?? "");
-    form.append("is_active", String(v.is_active ? 1 : 0));
-    if (v.image?.[0]) form.append("image", v.image[0]);
-    if (removeImage) form.append("remove_image", "1"); // бекенд да нулира снимката
+    if (!v.category_id || v.category_id <= 0) {
+      toast.error("Моля, изберете категория.");
+      return;
+    }
 
     try {
       setUiBusy(true);
+
       await toast.promise(
-        v.id ? api.post(`/dishes/${v.id}?_method=PATCH`, form) : api.post("/dishes", form),
+        v.id
+          ? updateDish(v.id, {
+              name: v.name,
+              price: v.price,
+              category_id: v.category_id,
+              description: v.description ?? "",
+              is_active: v.is_active,
+              image: v.image?.[0],
+              remove_image: removeImage,
+            })
+          : createDish({
+              name: v.name,
+              price: v.price,
+              category_id: v.category_id,
+              description: v.description ?? "",
+              is_active: v.is_active,
+              image: v.image?.[0],
+            }),
         {
           loading: v.id ? "Записвам промените..." : "Създавам ястие...",
           success: v.id ? "Ястието е обновено" : "Ястието е създадено",
           error: "Грешка при запис",
         }
       );
+
       setEditing(null);
       reset({ name: "", price: 0, is_active: true, category_id: 0, description: "" });
       clearPreview(false);
@@ -213,7 +311,7 @@ export default function Dishes() {
 
     try {
       setUiBusy(true);
-      await toast.promise(api.delete(`/dishes/${id}`), {
+      await toast.promise(deleteDish(id), {
         loading: "Изтривам...",
         success: "Ястието е изтрито",
         error: "Грешка при изтриване",
@@ -224,31 +322,6 @@ export default function Dishes() {
     }
   };
 
-  // ---------- Image preview / remove ----------
-  const [preview, setPreview] = useState<string | null>(null);
-  const [removeImage, setRemoveImage] = useState(false);
-  const imageInputRef = useRef<HTMLInputElement>(null);
-  const imageRegister = register("image"); // ще слеем ref-овете
-
-  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    setRemoveImage(false); // има нов файл -> няма нужда да трием старата
-    if (preview) URL.revokeObjectURL(preview);
-    if (!file) {
-      setPreview(null);
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    setPreview(url);
-  }
-  function clearPreview(markToRemove: boolean) {
-    if (preview) URL.revokeObjectURL(preview);
-    setPreview(null);
-    if (imageInputRef.current) imageInputRef.current.value = "";
-    resetField("image");
-    setRemoveImage(markToRemove); // ако true -> ще пратим remove_image=1
-  }
-
   const pages = useMemo(() => {
     const last = data?.meta.last_page ?? 1;
     return Array.from({ length: last }, (_, i) => i + 1);
@@ -256,7 +329,7 @@ export default function Dishes() {
 
   // ---------- DnD ----------
   const onDragEnd = async (e: DragEndEvent) => {
-    if (uiBusy) return; // не позволявай паралелни операции
+    if (uiBusy) return;
     const { active, over } = e;
     if (!over || active.id === over.id) return;
 
@@ -266,19 +339,17 @@ export default function Dishes() {
     if (oldIndex === -1 || newIndex === -1) return;
 
     const reordered = arrayMove(list, oldIndex, newIndex);
-    setRows(reordered); // optimistic
+    setRows(reordered);
 
     try {
       setUiBusy(true);
-      await toast.promise(
-        api.post("/dishes/reorder", {
-          ids: reordered.map((i) => i.id),
-          category_id: query.category_id ?? undefined, // 👈 ВАЖНО
-        }),
-        { loading: "Записвам подредбата…", success: "Редът е записан", error: "Грешка при запис на реда" }
-      );
-      // За да видиш промяната (при сорт по position):
-      load(1); // 👈 върни се на стр. 1
+      await toast.promise(reorderDishes(reordered.map((i) => i.id), query.category_id), {
+        loading: "Записвам подредбата…",
+        success: "Редът е записан",
+        error: "Грешка при запис на реда",
+      });
+
+      load(1);
     } finally {
       setUiBusy(false);
     }
@@ -292,23 +363,22 @@ export default function Dishes() {
 
       {/* Филтри */}
       <div className="flex flex-wrap gap-3 items-end">
-        <div>
+        <div className="min-w-[220px] max-w-full">
           <label className="block text-sm mb-1">Категория</label>
-          <select
-            className="border rounded p-2"
-            value={query.category_id ?? ""}
-            onChange={(e) =>
-              setQuery((q) => ({ ...q, page: 1, category_id: e.target.value ? Number(e.target.value) : undefined }))
+
+          <AppSelect<number | -1>
+            value={(query.category_id ?? -1) as number | -1}
+            onChange={(val) =>
+              setQuery((q) => ({
+                ...q,
+                page: 1,
+                category_id: val === -1 ? undefined : Number(val),
+              }))
             }
+            options={filterCategoryOptions}
+            placeholder="Всички"
             disabled={disableAll}
-          >
-            <option value="">Всички</option>
-            {cats.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          />
         </div>
 
         <div>
@@ -338,18 +408,27 @@ export default function Dishes() {
             {errors.name && <span className="text-sm text-red-600">{errors.name.message}</span>}
           </div>
 
-          <select
-            className="border rounded p-2 w-full sm:col-span-2"
-            {...register("category_id", { valueAsNumber: true })}
-            disabled={disableAll}
-          >
-            <option value={0}>-- избери категория --</option>
-            {cats.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
+          <div className="sm:col-span-2 min-w-0">
+            <Controller
+              control={control}
+              name="category_id"
+              rules={{
+                validate: (v) => (v && v > 0 ? true : "Моля, изберете категория."),
+              }}
+              render={({ field }) => (
+                <AppSelect<number>
+                  value={field.value ?? 0}
+                  onChange={(val) => field.onChange(Number(val))}
+                  options={[{ value: 0, label: "-- избери категория --" }, ...categoryOptions]}
+                  placeholder="-- избери категория --"
+                  disabled={disableAll}
+                />
+              )}
+            />
+            {errors.category_id && (
+              <span className="text-sm text-red-600">{String(errors.category_id.message)}</span>
+            )}
+          </div>
 
           <div className="flex items-center gap-2 min-w-0 sm:col-span-1">
             <input
@@ -378,18 +457,18 @@ export default function Dishes() {
                 accept="image/*"
                 {...imageRegister}
                 ref={(el) => {
-                  imageInputRef.current = el ?? null; // нашият DOM ref
-                  imageRegister.ref(el); // RHF ref
+                  imageInputRef.current = el ?? null;
+                  imageRegister.ref(el);
                 }}
                 onChange={(e) => {
-                  imageRegister.onChange(e); // RHF да види файла
-                  handleImageChange(e); // превю
+                  imageRegister.onChange(e);
+                  handleImageChange(e);
                 }}
                 className="shrink-0"
                 disabled={disableAll}
               />
               <div className="w-24 h-16 rounded border bg-gray-50 overflow-hidden flex items-center justify-center">
-                {(preview ?? editing?.image_url) ? (
+                {preview ?? editing?.image_url ? (
                   <img
                     src={(preview ?? editing?.image_url) as string}
                     alt="Preview"
@@ -400,6 +479,7 @@ export default function Dishes() {
                 )}
               </div>
             </div>
+
             {(preview || editing?.image_url) && (
               <button
                 type="button"
@@ -456,7 +536,7 @@ export default function Dishes() {
             <table className="min-w-full text-sm">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="p-2 w-8"></th>
+                  <th className="p-2 w-10"></th>
                   <th className="p-2 text-left">Име</th>
                   <th className="p-2">Категория</th>
                   <th className="p-2">Цена</th>
@@ -489,9 +569,9 @@ export default function Dishes() {
             key={p}
             onClick={() => setQuery((q) => ({ ...q, page: p }))}
             disabled={disableAll || loading}
-            className={`px-3 py-1 rounded border ${
-              disableAll || loading ? "opacity-60 cursor-not-allowed" : ""
-            } ${p === data?.meta.current_page ? "bg-black text-white" : ""}`}
+            className={`px-3 py-1 rounded border ${disableAll || loading ? "opacity-60 cursor-not-allowed" : ""} ${
+              p === data?.meta.current_page ? "bg-black text-white" : ""
+            }`}
           >
             {p}
           </button>
