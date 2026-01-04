@@ -241,6 +241,8 @@ export default function PublicMenu() {
           {/* Търсачка */}
           <div className="mt-4 relative">
             <input
+              id="menu_search"
+              name="menu_search"
               className="w-full bg-neutral-800/70 border border-white/10 rounded-xl py-3 pl-4 pr-10 outline-none focus:ring-2 focus:ring-white/20"
               value={query}
               onChange={(e) => {
@@ -335,12 +337,13 @@ export default function PublicMenu() {
 
                           {!!d.price && (
                             <div className="text-sm font-semibold mt-1">
-                              <div>{fmtBGN.format(d.price)}</div>
+                              <div>{fmtEUR.format(bgnToEur(d.price))}</div>
                               <div className="opacity-70">
-                                ({fmtEUR.format(bgnToEur(d.price))})
+                                ({fmtBGN.format(d.price)})
                               </div>
                             </div>
                           )}
+
                         </div>
 
                         {d.image_url && (

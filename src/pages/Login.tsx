@@ -33,7 +33,7 @@ export default function Login() {
 
   const [err, setErr] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
-  const [cooldownLeft, setCooldownLeft] = useState<number>(0); // секунди до края
+  const [cooldownLeft, setCooldownLeft] = useState<number>(0);
 
   const {
     register,
@@ -45,13 +45,15 @@ export default function Login() {
   } = useForm<{ email: string; password: string }>({ resolver: zodResolver(schema) });
 
   const emailVal = watch("email") || "";
-  const localLockedUntil = useMemo(() => getLocalLockTs(emailVal), [emailVal]);
+  useMemo(() => getLocalLockTs(emailVal), [emailVal]); // само да се преизчислява
 
   // тикер за countdown-а
   useEffect(() => {
-    if (!emailVal) { setCooldownLeft(0); return; }
+    if (!emailVal) {
+      setCooldownLeft(0);
+      return;
+    }
 
-    // Преименувана на checkAndUpdate за по-добра яснота
     const checkAndUpdate = () => {
       const now = Date.now();
       const until = getLocalLockTs(emailVal);
@@ -61,8 +63,7 @@ export default function Login() {
     };
 
     checkAndUpdate();
-    
-    // КОРЕКЦИЯТА за CSP: Обвиваме функцията в lambda (стрелкова) функция
+
     const id = setInterval(() => {
       checkAndUpdate();
     }, 1000);
@@ -74,7 +75,7 @@ export default function Login() {
     setErr(null);
     clearErrors();
 
-    // 1) ако имаме локален lock → не пращаме заявка
+    // 0) ако имаме локален lock → не пращаме заявка
     const untilTs = getLocalLockTs(v.email);
     if (untilTs > Date.now()) {
       const leftMin = Math.max(1, Math.ceil((untilTs - Date.now()) / 60000));
@@ -82,39 +83,48 @@ export default function Login() {
       return;
     }
 
-    try {
-      const { is_admin, token, restaurant } = (await login(v.email, v.password)) as LoginResp;
+    // ✅ важна част: махаме стария ресторант, за да няма "наследяване" от предишен логин
+    localStorage.removeItem("restaurant_slug");
+    localStorage.removeItem("restaurant");
 
+    try {
+      const { is_admin, token } = (await login(v.email, v.password)) as LoginResp;
+
+      // token header (ако AuthContext вече го сетва, това е harmless)
       if (token) {
         localStorage.setItem("token", token);
         api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
       }
+
       localStorage.setItem("is_admin", String(!!is_admin));
 
       if (is_admin) {
         nav("/admin/platform/restaurants", { replace: true });
-      } else {
-        const slug =
-          restaurant?.slug ||
-          localStorage.getItem("restaurant_slug") ||
-          localStorage.getItem("restaurant") ||
-          "";
-        if (!slug) { setErr("Потребителят няма асоцииран ресторант."); return; }
-        localStorage.setItem("restaurant_slug", slug);
-        localStorage.setItem("restaurant", slug);
-        nav(`/admin/r/${slug}/categories`, { replace: true });
+        return;
       }
+
+      // ✅ НЕ разчитай на localStorage fallback. Вземи ресторанта от /auth/me (backend ти го връща)
+      const me = await api.get("/auth/me");
+      const restaurant = me.data?.restaurant as { slug: string } | null | undefined;
+
+      const slug = restaurant?.slug || "";
+      if (!slug) {
+        setErr("Потребителят няма асоцииран ресторант.");
+        return;
+      }
+
+      localStorage.setItem("restaurant_slug", slug);
+      localStorage.setItem("restaurant", slug);
+
+      nav(`/admin/r/${slug}/categories`, { replace: true });
     } catch (e: any) {
       const res = e?.response;
       const data = res?.data;
 
-      // 429 от middleware/контролера → сетни локален lock и не пращай повече
       if (res?.status === 429) {
-        const retryIn = Number(data?.retry_in || 0); // секунди
-        // предпочитаме locked_until ако го има
+        const retryIn = Number(data?.retry_in || 0);
         const untilIso = data?.locked_until;
-        const untilTs =
-          untilIso ? Date.parse(untilIso) : Date.now() + Math.max(1, retryIn) * 1000;
+        const untilTs = untilIso ? Date.parse(untilIso) : Date.now() + Math.max(1, retryIn) * 1000;
 
         setLocalLockTs(emailVal, untilTs);
         const leftMin = Math.max(1, Math.ceil((untilTs - Date.now()) / 60000));
@@ -123,12 +133,11 @@ export default function Login() {
         return;
       }
 
-      // 422 (ValidationException) → полеви грешки
       if (res?.status === 422) {
         const serverErrors = data?.errors;
         if (serverErrors && typeof serverErrors === "object") {
           Object.entries(serverErrors).forEach(([field, msgs]) => {
-            const msg = Array.isArray(msgs) ? msgs[0] : String(msgs);
+            const msg = Array.isArray(msgs) ? (msgs as any)[0] : String(msgs);
             if (field === "email" || field === "password") {
               setError(field as "email" | "password", { type: "server", message: msg });
             } else {
@@ -149,7 +158,6 @@ export default function Login() {
     }
   });
 
-  // бутонът е дизейбълнат, ако има локален lock или се submit-ва
   const disabled = isSubmitting || cooldownLeft > 0;
 
   return (
@@ -168,7 +176,9 @@ export default function Login() {
         )}
 
         <div>
-          <label className="block mb-1" htmlFor="email">Имейл</label>
+          <label className="block mb-1" htmlFor="email">
+            Имейл
+          </label>
           <input
             id="email"
             type="email"
@@ -181,7 +191,9 @@ export default function Login() {
         </div>
 
         <div>
-          <label className="block mb-1" htmlFor="password">Парола</label>
+          <label className="block mb-1" htmlFor="password">
+            Парола
+          </label>
           <div className="relative">
             <input
               id="password"
@@ -199,10 +211,10 @@ export default function Login() {
               className="absolute inset-y-0 right-0 px-3 flex items-center text-gray-500 hover:text-gray-700"
               disabled={disabled}
             >
-              {/* прост eye/eye-off svg */}
               {showPassword ? (
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M3 3l18 18" /><path d="M10.6 10.6A2 2 0 0012 14a2 2 0 001.4-3.4" />
+                  <path d="M3 3l18 18" />
+                  <path d="M10.6 10.6A2 2 0 0012 14a2 2 0 001.4-3.4" />
                   <path d="M2 12s4-7 10-7c2.1 0 3.9.6 5.4 1.5M21.5 12c-.6 1.5-1.6 2.9-2.8 4" />
                 </svg>
               ) : (

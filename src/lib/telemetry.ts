@@ -7,7 +7,7 @@ export type TelemetryType = "qr_scan" | "menu_open" | "search";
 // ✅ тук управляваш КЪДЕ да е включена телеметрията
 //    - добавяш slug-ове
 //    - махаш slug-ове
-const TELEMETRY_ALLOWED_SLUGS = ["avva", "viva"]; // пример – промени според теб
+const TELEMETRY_ALLOWED_SLUGS = ["eres","viva"]; // пример – промени според теб
 
 export function isTelemetryEnabledForSlug(slug?: string | null) {
   if (!slug) return false;
@@ -122,4 +122,6 @@ export function logSearchImmediate(termRaw: string, slug?: string | null) {
     lastSentTerm = term;
     logTelemetry("search", { term });
   }
+
+  
 }

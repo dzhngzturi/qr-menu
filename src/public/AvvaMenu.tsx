@@ -418,6 +418,8 @@ export default function AvvaMenu() {
           {pill !== "allergens" && (
             <div className="mt-3 sm:mt-4 relative">
               <input
+                id="menu_search"
+                name="menu_search"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Търсене в категории и ястия"
@@ -595,10 +597,10 @@ export default function AvvaMenu() {
                             {!!d.price && (
                               <div className="text-right text-sm font-semibold">
                                 <div className="text-[#FFC107]">
-                                  {fmtBGN.format(d.price)}
+                                  {fmtEUR.format(bgnToEur(d.price))}
                                 </div>
                                 <div className="opacity-60">
-                                  ({fmtEUR.format(bgnToEur(d.price))})
+                                  ({fmtBGN.format(d.price)})
                                 </div>
                               </div>
                             )}
@@ -654,10 +656,10 @@ export default function AvvaMenu() {
                           {!!d.price && (
                             <div className="text-right text-sm font-semibold">
                               <div className="text-[#FFC107]">
-                                {fmtBGN.format(d.price)}
+                                {fmtEUR.format(bgnToEur(d.price))}
                               </div>
                               <div className="opacity-60">
-                                ({fmtEUR.format(bgnToEur(d.price))})
+                                ({fmtBGN.format(d.price)})
                               </div>
                             </div>
                           )}

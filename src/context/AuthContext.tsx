@@ -16,7 +16,7 @@ type LoginResponse = {
   token: string;
   is_admin: boolean;
   user: User;
-  restaurant?: RestaurantLite; // 👈 backend да връща това при login()
+  restaurant?: RestaurantLite; // backend може да НЕ го връща при login()
 };
 
 type UpdatePayload = {
@@ -30,7 +30,7 @@ type AuthCtx = {
   token: string | null;
   isAdmin: boolean;
   user: User | null;
-  restaurant: RestaurantLite;      // 👈 вече е в контекста
+  restaurant: RestaurantLite;
   loading: boolean;
 
   login: (email: string, password: string) => Promise<LoginResponse>;
@@ -44,14 +44,16 @@ const Ctx = createContext<AuthCtx>({} as any);
 export const useAuth = () => useContext(Ctx);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [token, setToken] = useState<string | null>(
-    localStorage.getItem("token")
-  );
-  const [isAdmin, setIsAdmin] = useState<boolean>(
-    localStorage.getItem("is_admin") === "true"
-  );
+  const [token, setToken] = useState<string | null>(localStorage.getItem("token"));
+  const [isAdmin, setIsAdmin] = useState<boolean>(localStorage.getItem("is_admin") === "true");
   const [user, setUser] = useState<User | null>(null);
-  const [restaurant, setRestaurant] = useState<RestaurantLite>(null); // 👈
+
+  // ✅ много важно: ако имаш запазен slug, зареди го в state, за да не е null при първи render
+  const [restaurant, setRestaurant] = useState<RestaurantLite>(() => {
+    const slug = localStorage.getItem("restaurant_slug") || localStorage.getItem("restaurant");
+    return slug ? ({ id: 0, slug, name: "" } as any) : null;
+  });
+
   const [loading, setLoading] = useState<boolean>(true);
 
   // централизирано прилагане/чистене на токена
@@ -67,89 +69,83 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const persistRestaurant = (r: RestaurantLite) => {
+  const persistRestaurant = useCallback((r: RestaurantLite) => {
     setRestaurant(r);
     const slug = r?.slug;
+
     if (slug) {
       localStorage.setItem("restaurant_slug", slug);
-      localStorage.setItem("restaurant", slug); // legacy ключ за съвместимост
+      localStorage.setItem("restaurant", slug); // legacy
+    } else {
+      localStorage.removeItem("restaurant_slug");
+      localStorage.removeItem("restaurant");
     }
-  };
+  }, []);
+
+  const refreshMe: AuthCtx["refreshMe"] = useCallback(async () => {
+    if (!token) {
+      setUser(null);
+      setIsAdmin(false);
+      persistRestaurant(null);
+      return;
+    }
+
+    try {
+      const res = await api.get("/auth/me");
+
+      // backend: { user: {...}, is_admin: bool, restaurant: {...}|null }
+      const nextUser: User | null = res.data?.user ?? null;
+      const nextIsAdmin = !!res.data?.is_admin;
+      const nextRestaurant: RestaurantLite =
+        typeof res.data?.restaurant !== "undefined" ? (res.data.restaurant ?? null) : null;
+
+      setUser(nextUser);
+      setIsAdmin(nextIsAdmin);
+      localStorage.setItem("is_admin", String(nextIsAdmin));
+
+      // ✅ истината за restaurant идва от /auth/me
+      persistRestaurant(nextRestaurant);
+    } catch {
+      // токенът е невалиден
+      applyToken(null);
+      setUser(null);
+      setIsAdmin(false);
+      persistRestaurant(null);
+    }
+  }, [token, applyToken, persistRestaurant]);
 
   const login: AuthCtx["login"] = useCallback(
     async (email, password) => {
-      const { data } = await api.post<LoginResponse>("/auth/login", {
-        email,
-        password,
-      });
+      // 1) login -> взимаме token
+      const { data } = await api.post<LoginResponse>("/auth/login", { email, password });
 
-      // токен + header
       applyToken(data.token);
-      // флаг за админ
-      localStorage.setItem("is_admin", String(!!data.is_admin));
-      setIsAdmin(!!data.is_admin);
-      // потребител
-      setUser(data.user);
-      // ресторант (ако не е супер-админ)
-      if (typeof data.restaurant !== "undefined") {
-        persistRestaurant(data.restaurant ?? null);
-      } else {
-        setRestaurant(null);
-      }
+
+      // ⚠️ НЕ разчитаме на data.restaurant (при теб login() не го връща)
+      // 2) веднага sync с /auth/me за да вземем правилните is_admin + restaurant
+      await refreshMe();
 
       return data;
     },
-    [applyToken]
+    [applyToken, refreshMe]
   );
 
   const logout: AuthCtx["logout"] = useCallback(async () => {
     try {
       await api.post("/auth/logout");
     } catch {}
+
     applyToken(null);
     localStorage.removeItem("is_admin");
     setIsAdmin(false);
     setUser(null);
-    setRestaurant(null);
-  }, [applyToken]);
+    persistRestaurant(null);
+  }, [applyToken, persistRestaurant]);
 
-  const refreshMe: AuthCtx["refreshMe"] = useCallback(async () => {
-    if (!token) {
-      setUser(null);
-      setIsAdmin(false);
-      setRestaurant(null);
-      return;
-    }
-    try {
-      const res = await api.get("/auth/me");
-      const nextUser: User = res.data?.user ?? res.data;
-      if (nextUser) setUser(nextUser);
-
-      if (typeof res.data?.is_admin !== "undefined") {
-        setIsAdmin(!!res.data.is_admin);
-        localStorage.setItem("is_admin", String(!!res.data.is_admin));
-      }
-
-      if (typeof res.data?.restaurant !== "undefined") {
-        // backend връща restaurant и тук
-        persistRestaurant(res.data.restaurant ?? null);
-      }
-    } catch {
-      // токенът е невалиден
-      applyToken(null);
-      setUser(null);
-      setIsAdmin(false);
-      setRestaurant(null);
-    }
-  }, [token, applyToken]);
-
-  const updateProfile: AuthCtx["updateProfile"] = useCallback(
-    async (payload) => {
-      const res = await api.patch("/auth/me", payload);
-      if (res.data?.user) setUser(res.data.user);
-    },
-    []
-  );
+  const updateProfile: AuthCtx["updateProfile"] = useCallback(async (payload) => {
+    const res = await api.patch("/auth/me", payload);
+    if (res.data?.user) setUser(res.data.user);
+  }, []);
 
   // Bootstrap – при наличие на токен възстанови състояние чрез /auth/me
   useEffect(() => {
@@ -162,20 +158,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else {
           setUser(null);
           setIsAdmin(false);
-          setRestaurant(null);
+          persistRestaurant(null);
         }
       } finally {
         setLoading(false);
       }
     })();
-  }, [token, refreshMe]);
+  }, [token, refreshMe, persistRestaurant]);
 
   const value = useMemo<AuthCtx>(
     () => ({
       token,
       isAdmin,
       user,
-      restaurant, // 👈 expose-нато към гардовете/страниците
+      restaurant,
       loading,
       login,
       logout,
