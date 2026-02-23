@@ -10,24 +10,25 @@ import PlatformRestaurants from "./pages/PlatformRestaurants";
 import PlatformRestaurantUsers from "./pages/PlatformRestaurantUsers";
 import MenuRouter from "./pages/MenuRouter";
 import NotFound from "./pages/NotFound";
-import Allergens from "./pages/Allergens";
+import AllergensReadOnly from "./pages/AllergensReadOnly";
 import Profile from "./pages/Profile";
-
-// ВАЖНО: един общ AuthProvider
 import { AuthProvider } from "./context/AuthContext";
 import Telemetry from "./pages/Telemetry";
 import AdminRestaurantGuard from "./components/AdminRestaurantGuard";
+import RestaurantLangsPage from "./pages/RestaurantLangs";
+import PlatformRestaurantAllergens from "./pages/PlatformRestaurantAllergens";
+import PlatformAllergensPage from "./pages/PlatformAllergens";
+import Privacy from "./pages/Privacy";
 
-export default function App() {
+function AdminApp() {
   return (
     <AuthProvider>
       <Routes>
-        {/* Login */}
-        <Route path="/login" element={<Login />} />
+        {/* ✅ Login ВЪТРЕ в /admin */}
+        <Route path="login" element={<Login />} />
 
-        {/* Платформа – само супер-админ */}
         <Route
-          path="/admin/platform"
+          path="platform"
           element={
             <PlatformProtected>
               <AdminShell />
@@ -36,11 +37,13 @@ export default function App() {
         >
           <Route path="restaurants" element={<PlatformRestaurants />} />
           <Route path="restaurants/:id/users" element={<PlatformRestaurantUsers />} />
+          <Route path="restaurants/:slug/allergens" element={<PlatformRestaurantAllergens />} />
+          <Route path="allergens" element={<PlatformAllergensPage />} />
+
         </Route>
 
-        {/* Профил (примерно само за логнати; ако е само за супер-админ — остави PlatformProtected) */}
         <Route
-          path="/admin/profile"
+          path="profile"
           element={
             <PlatformProtected>
               <AdminShell />
@@ -50,31 +53,50 @@ export default function App() {
           <Route index element={<Profile />} />
         </Route>
 
-        {/* Ресторантски контекст – логнат потребител */}
         <Route
-          path="/admin/r/:slug"
+          path="r/:slug"
           element={
             <Protected>
               <AdminRestaurantGuard>
-              <AdminShell />
+                <AdminShell />
               </AdminRestaurantGuard>
             </Protected>
           }
         >
-          <Route path="telemetry" element={<Telemetry />} /> 
+          <Route path="telemetry" element={<Telemetry />} />
           <Route index element={<Navigate to="categories" replace />} />
           <Route path="categories" element={<Categories />} />
           <Route path="dishes" element={<Dishes />} />
-          <Route path="allergens" element={<Allergens />} />
+          <Route path="allergens" element={<AllergensReadOnly />} />
+          <Route path="langs" element={<RestaurantLangsPage />} />
         </Route>
 
-        {/* Публично меню */}
-        <Route path="/menu/:slug" element={<MenuRouter />} />
-        <Route path="/menu/:slug/c/:cid" element={<MenuRouter />} />
+        {/* ✅ ако някой отвори /admin директно */}
+        <Route path="" element={<Navigate to="login" replace />} />
 
-        {/* 404 */}
+        {/* 404 в admin зоната */}
         <Route path="*" element={<NotFound />} />
       </Routes>
     </AuthProvider>
+  );
+}
+
+export default function App() {
+  return (
+    <Routes>
+      {/* ✅ Публично меню (без AuthProvider) */}
+      <Route path="/menu/:slug" element={<MenuRouter />} />
+      <Route path="/menu/:slug/c/:cid" element={<MenuRouter />} />
+      <Route path="/privacy" element={<Privacy />} />
+
+      {/* ✅ Redirect стария login */}
+      <Route path="/login" element={<Navigate to="/admin/login" replace />} />
+
+      {/* ✅ Admin зона */}
+      <Route path="/admin/*" element={<AdminApp />} />
+
+      {/* 404 */}
+      <Route path="*" element={<NotFound />} />
+    </Routes>
   );
 }

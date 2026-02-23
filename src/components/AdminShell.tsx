@@ -4,13 +4,19 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth } from "../context/AuthContext";
 import { toast } from "react-hot-toast";
 import Modal from "./Modal";
+import { useTranslation } from "react-i18next";
+import LanguageSwitcherFancy from "./LanguageSwitcherFancy";
 
-// 🆕 обща конфигурация за телеметрия (allow-list)
-import { isTelemetryEnabledSlug } from "../lib/telemetry-config";
+import { apiAdmin } from "../lib/api"; // ✅ for sidebar allergens check + check-restaurant
+
+import i18n, { type AppLang } from "../i18n";
+import { fetchUiLangs } from "../services/uiLangs";
 
 /* ---------- Профил в сайдбара + модал ---------- */
 function ProfileInline() {
+  const { t } = useTranslation();
   const { user, updateProfile, refreshMe } = useAuth();
+
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(user?.name || "");
   const [email, setEmail] = useState(user?.email || "");
@@ -18,6 +24,11 @@ function ProfileInline() {
   const [password2, setPassword2] = useState("");
   const [saving, setSaving] = useState(false);
   const firstInputRef = useRef<HTMLInputElement>(null);
+
+  const nameId = "sidebar-profile-name";
+  const emailId = "sidebar-profile-email";
+  const passId = "sidebar-profile-password";
+  const pass2Id = "sidebar-profile-password2";
 
   useEffect(() => {
     setName(user?.name || "");
@@ -33,12 +44,12 @@ function ProfileInline() {
         ...(password ? { password, password_confirmation: password2 } : {}),
       });
       await refreshMe();
-      toast.success("Профилът е обновен.");
+      toast.success(t("admin.profile.updated"));
       setOpen(false);
       setPassword("");
       setPassword2("");
     } catch (e: any) {
-      toast.error(e?.response?.data?.message || "Грешка при запис.");
+      toast.error(e?.response?.data?.message || t("admin.common.save_error"));
     } finally {
       setSaving(false);
     }
@@ -50,24 +61,26 @@ function ProfileInline() {
     <>
       <div className="mt-3 rounded-lg bg-white/5 px-3 py-2">
         <div className="text-[11px] uppercase tracking-wide text-white/60">
-          Моят профил
+          {t("admin.profile.my_profile")}
         </div>
+
         <div className="mt-1 text-sm">
           <div className="font-medium">{user.name}</div>
           <div className="text-white/70">{user.email}</div>
         </div>
+
         <button
           onClick={() => setOpen(true)}
           className="mt-2 w-full rounded bg-white/10 px-2 py-1 text-xs hover:bg-white/15"
         >
-          Редакция
+          {t("admin.common.edit")}
         </button>
       </div>
 
       <Modal
         open={open}
         onClose={() => setOpen(false)}
-        title="Редакция на профил"
+        title={t("admin.profile.edit_title")}
         initialFocusRef={firstInputRef}
         size="md"
         footer={
@@ -75,57 +88,82 @@ function ProfileInline() {
             <button
               className="rounded border px-3 py-1.5 text-sm hover:bg-gray-50"
               onClick={() => setOpen(false)}
+              disabled={saving}
             >
-              Отказ
+              {t("admin.common.cancel")}
             </button>
+
             <button
               className="rounded bg-black text-white px-3 py-1.5 text-sm disabled:opacity-60"
               onClick={onSave}
               disabled={saving}
             >
-              {saving ? "Запис..." : "Запази"}
+              {saving ? t("admin.common.saving") : t("admin.common.save")}
             </button>
           </div>
         }
       >
         <div className="space-y-3 text-neutral-800">
           <div>
-            <label className="block text-sm mb-1">Име</label>
+            <label className="block text-sm mb-1" htmlFor={nameId}>
+              {t("admin.profile.name")}
+            </label>
             <input
+              id={nameId}
               ref={firstInputRef}
               className="w-full rounded border px-3 py-2"
               value={name}
               onChange={(e) => setName(e.target.value)}
+              autoComplete="name"
+              disabled={saving}
             />
           </div>
+
           <div>
-            <label className="block text-sm mb-1">Имейл</label>
+            <label className="block text-sm mb-1" htmlFor={emailId}>
+              {t("admin.profile.email")}
+            </label>
             <input
+              id={emailId}
               className="w-full rounded border px-3 py-2"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
+              disabled={saving}
             />
           </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm mb-1">Нова парола</label>
+              <label className="block text-sm mb-1" htmlFor={passId}>
+                {t("admin.profile.new_password")}
+              </label>
               <input
+                id={passId}
                 className="w-full rounded border px-3 py-2"
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="(по избор)"
+                placeholder={t("admin.profile.optional")}
+                autoComplete="new-password"
+                disabled={saving}
               />
             </div>
+
             <div>
-              <label className="block text-sm mb-1">Потвърди парола</label>
+              <label className="block text-sm mb-1" htmlFor={pass2Id}>
+                {t("admin.profile.confirm_password")}
+              </label>
               <input
+                id={pass2Id}
                 className="w-full rounded border px-3 py-2"
                 type="password"
                 value={password2}
                 onChange={(e) => setPassword2(e.target.value)}
-                placeholder="(по избор)"
+                placeholder={t("admin.profile.optional")}
+                autoComplete="new-password"
+                disabled={saving}
               />
             </div>
           </div>
@@ -136,7 +174,21 @@ function ProfileInline() {
 }
 
 /* ------------------- Shell ------------------- */
+function normalizeLang(raw: unknown): AppLang {
+  const v = String(raw ?? "").trim().toLowerCase();
+  if (!v) return "bg";
+  const base = v.split("-")[0];
+  return (base || "bg") as AppLang;
+}
+
+async function applyUiLang(lang: AppLang) {
+  localStorage.setItem("lang", lang);
+  await i18n.changeLanguage(lang);
+  document.documentElement.lang = lang;
+}
+
 export default function AdminShell() {
+  const { t } = useTranslation();
   const { slug } = useParams();
   const navigate = useNavigate();
   const { isAdmin, logout } = useAuth();
@@ -145,14 +197,22 @@ export default function AdminShell() {
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // контролирано поле за "Use"
   const [slugInput, setSlugInput] = useState<string>("");
   const quickSlugRef = useRef<HTMLInputElement>(null);
+  const quickSlugId = "admin-quick-slug";
 
-  // кои ресторанти да скрием Алергените
-  const HIDE_ALLERGENS_FOR = new Set<string>(["viva","eres"]);
-  const shouldShowAllergens = (slug?: string | null) =>
-    !!slug && !HIDE_ALLERGENS_FOR.has(slug.toLowerCase());
+  // ✅ UI langs controlled by superadmin per restaurant
+  const [uiLangs, setUiLangs] = useState<AppLang[]>(["bg"]);
+  const [uiDefaultLang, setUiDefaultLang] = useState<AppLang>("bg");
+
+  // ✅ gate: DO NOT render sidebar/pages until i18n language is applied
+  const [uiLangReady, setUiLangReady] = useState(false);
+
+  // ✅ show Allergens link only if API returns non-empty list
+  const [hasAllergens, setHasAllergens] = useState(false);
+
+  // ✅ NEW: show Telemetry only if API says telemetry_enabled=true for this restaurant
+  const [telemetryEnabled, setTelemetryEnabled] = useState(false);
 
   useEffect(() => {
     const fromUrl = slug || "";
@@ -164,21 +224,149 @@ export default function AdminShell() {
     setRestaurant(s);
   }, [slug, isAdmin]);
 
-  // когато се смени текущият ресторант – попълваме полето по подразбиране
   useEffect(() => {
     setSlugInput(restaurant || "");
+  }, [restaurant]);
+
+  // ✅ Load ui langs for this restaurant (and APPLY language BEFORE render)
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      setUiLangReady(false);
+
+      // if no restaurant selected -> default bg (and wait)
+      if (!restaurant) {
+        try {
+          setUiLangs(["bg"]);
+          setUiDefaultLang("bg");
+
+          const cur = normalizeLang(i18n.language);
+          if (cur !== "bg") await applyUiLang("bg");
+        } finally {
+          if (mounted) setUiLangReady(true);
+        }
+        return;
+      }
+
+      try {
+        const res = await fetchUiLangs(restaurant);
+
+        const list = (res.ui_langs ?? [])
+          .map((x: any) => normalizeLang(x))
+          .filter(Boolean) as AppLang[];
+
+        const safeLangs: AppLang[] = list.length ? Array.from(new Set(list)) : ["bg"];
+
+        const def = normalizeLang(res.ui_default_lang || safeLangs[0] || "bg");
+        const safeDef: AppLang = safeLangs.includes(def) ? def : safeLangs[0];
+
+        if (!mounted) return;
+
+        setUiLangs(safeLangs);
+        setUiDefaultLang(safeDef);
+
+        // Decide what to apply:
+        // - keep current if allowed
+        // - else apply default from backend
+        const cur = normalizeLang(i18n.language);
+        const target = safeLangs.includes(cur) ? cur : safeDef;
+
+        await applyUiLang(target);
+
+        if (!mounted) return;
+        setUiLangReady(true);
+      } catch {
+        // fallback: bg
+        try {
+          if (!mounted) return;
+
+          setUiLangs(["bg"]);
+          setUiDefaultLang("bg");
+
+          const cur = normalizeLang(i18n.language);
+          if (cur !== "bg") await applyUiLang("bg");
+        } finally {
+          if (mounted) setUiLangReady(true);
+        }
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [restaurant]);
+
+  // ✅ Check allergens availability for sidebar
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      if (!restaurant) {
+        setHasAllergens(false);
+        return;
+      }
+
+      try {
+        const { data } = await apiAdmin.get<{ data: any[] }>("allergens", {
+          params: { restaurant }, // resolve.restaurant uses ?restaurant=slug
+        });
+
+        if (!mounted) return;
+        setHasAllergens(Array.isArray(data?.data) && data.data.length > 0);
+      } catch {
+        if (!mounted) return;
+        setHasAllergens(false);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [restaurant]);
+
+  // ✅ NEW: Check telemetry flag (DB truth) for sidebar
+  useEffect(() => {
+    let mounted = true;
+
+    (async () => {
+      if (!restaurant) {
+        setTelemetryEnabled(false);
+        return;
+      }
+
+      try {
+        const { data } = await apiAdmin.get("auth/check-restaurant", {
+          params: { restaurant }, // resolve.restaurant uses ?restaurant=slug
+        });
+
+        if (!mounted) return;
+        setTelemetryEnabled(!!data?.restaurant?.telemetry_enabled);
+      } catch {
+        if (!mounted) return;
+        setTelemetryEnabled(false);
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
   }, [restaurant]);
 
   const handleQuickUse = (s?: string) => {
     const v = (s || restaurant || "").trim();
     if (!v) return;
+
     localStorage.setItem("restaurant_slug", v);
     localStorage.setItem("restaurant", v);
-    toast.success(`Избран ресторант: ${v}`);
+
+    toast.success(t("admin.shell.selected_restaurant", { slug: v }));
     navigate(`/admin/r/${v}/categories`);
+
     setSidebarOpen(false);
     setRestaurant(v);
     setSlugInput(v);
+
     if (quickSlugRef.current) quickSlugRef.current.blur();
   };
 
@@ -186,55 +374,52 @@ export default function AdminShell() {
     try {
       await logout();
     } finally {
-      // чистим всички наши “ресторантски” данни от localStorage
       try {
         localStorage.removeItem("restaurant_slug");
         localStorage.removeItem("restaurant");
-        // ако имаш други ключове свързани с ресторанта / телеметрията – добави ги тук
-        // localStorage.removeItem("telemetry_session_id");
       } catch (e) {
         console.warn("Cannot access localStorage on logout:", e);
       }
 
-      // нулираме и локалния state, за да не остава стар slug в UI
       setRestaurant("");
       setSlugInput("");
-
       setLogoutOpen(false);
+
       navigate("/login", { replace: true });
     }
   };
 
-
   const showPlatformTools = isAdmin === true;
-
-  // 🆕 тук ползваме allow-list-а за телеметрия
-  const telemetryEnabled = isTelemetryEnabledSlug(restaurant);
 
   /* ---------- Sidebar (общо съдържание) ---------- */
   const SidebarContent = (
     <>
       <div className="px-4 py-4 border-b border-white/10">
-        <Link
-          to={showPlatformTools ? "/admin/platform/restaurants" : "#"}
-          className="text-lg font-semibold"
-          onClick={() => setSidebarOpen(false)}
-        >
-          Admin
-        </Link>
+        <div className="flex items-center justify-between gap-2">
+          <Link
+            to={showPlatformTools ? "/admin/platform/restaurants" : "#"}
+            className="text-lg font-semibold leading-tight"
+            onClick={() => setSidebarOpen(false)}
+          >
+            {t("admin.shell.title")}
+          </Link>
 
-        {!showPlatformTools && <ProfileInline />}
+          <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/10 text-white/70">
+            Admin
+          </span>
+        </div>
+
+        <ProfileInline />
 
         {showPlatformTools && (
           <div className="mt-3 text-xs text-white/80 space-y-2">
             <div>
-              Ресторант:{" "}
+              {t("admin.shell.restaurant")}:{" "}
               <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-2 py-0.5">
-                <strong>{restaurant || "(не е избран)"}</strong>
+                <strong>{restaurant || t("admin.shell.not_selected")}</strong>
               </span>
             </div>
 
-            {/* Смени / Use – контролиран input + надежден submit */}
             <form
               className="flex items-center gap-2 relative z-[200] pointer-events-auto"
               onSubmit={(e) => {
@@ -242,7 +427,7 @@ export default function AdminShell() {
                 e.stopPropagation();
                 const v = (slugInput || restaurant || "").trim();
                 if (!v) {
-                  toast.error("Въведи slug на ресторанта.");
+                  toast.error(t("admin.shell.enter_slug"));
                   return;
                 }
                 handleQuickUse(v);
@@ -251,13 +436,17 @@ export default function AdminShell() {
               onPointerDownCapture={(e) => e.stopPropagation()}
               onTouchStartCapture={(e) => e.stopPropagation()}
             >
-              <span className="text-[11px]">Смени</span>
+              <label className="text-[11px]" htmlFor={quickSlugId}>
+                {t("admin.shell.change")}
+              </label>
 
               <input
+                id={quickSlugId}
                 ref={quickSlugRef}
                 name="slug"
+                autoComplete="off"
                 className="w-28 rounded bg-white/10 px-2 py-1 text-[11px] placeholder-white/40 outline-none"
-                placeholder="slug..."
+                placeholder={t("admin.shell.slug_placeholder")}
                 value={slugInput}
                 onChange={(e) => setSlugInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -280,7 +469,7 @@ export default function AdminShell() {
                 onPointerDown={(e) => e.stopPropagation()}
                 onTouchEnd={(e) => e.stopPropagation()}
               >
-                Use
+                {t("admin.shell.use")}
               </button>
             </form>
           </div>
@@ -288,7 +477,6 @@ export default function AdminShell() {
       </div>
 
       <nav className="px-2 py-3 space-y-1">
-        {/* 🆕 Линкът Телеметрия се показва само ако allow-list казва ОК */}
         {restaurant && telemetryEnabled && (
           <NavLink
             to={`/admin/r/${restaurant}/telemetry`}
@@ -298,62 +486,63 @@ export default function AdminShell() {
             }
             onClick={() => setSidebarOpen(false)}
           >
-            Телеметрия
+            {t("nav.telemetry")}
           </NavLink>
         )}
 
         <NavLink
-          to={
-            restaurant
-              ? `/admin/r/${restaurant}/categories`
-              : "/admin/platform/restaurants"
-          }
+          to={restaurant ? `/admin/r/${restaurant}/categories` : "/admin/platform/restaurants"}
           className={({ isActive }) =>
             `block rounded px-4 py-2 text-sm ${isActive ? "bg-white/10 font-medium" : "hover:bg-white/5"
             }`
           }
           onClick={() => setSidebarOpen(false)}
         >
-          Категории
+          {t("admin.categories.title")}
         </NavLink>
 
         <NavLink
-          to={
-            restaurant
-              ? `/admin/r/${restaurant}/dishes`
-              : "/admin/platform/restaurants"
-          }
+          to={restaurant ? `/admin/r/${restaurant}/dishes` : "/admin/platform/restaurants"}
           className={({ isActive }) =>
             `block rounded px-4 py-2 text-sm ${isActive ? "bg-white/10 font-medium" : "hover:bg-white/5"
             }`
           }
           onClick={() => setSidebarOpen(false)}
         >
-          Ястия
+          {t("nav.dishes")}
         </NavLink>
 
-        {shouldShowAllergens(restaurant) && (
+        {/* ✅ Allergens appears only if API returns a non-empty list */}
+        {restaurant && hasAllergens && (
           <NavLink
-            to={
-              restaurant
-                ? `/admin/r/${restaurant}/allergens`
-                : "/admin/platform/restaurants"
-            }
+            to={`/admin/r/${restaurant}/allergens`}
             className={({ isActive }) =>
               `block rounded px-4 py-2 text-sm ${isActive ? "bg-white/10 font-medium" : "hover:bg-white/5"
               }`
             }
             onClick={() => setSidebarOpen(false)}
           >
-            Алергени
+            {t("nav.allergens")}
           </NavLink>
         )}
 
         {showPlatformTools && (
           <>
             <div className="mt-4 px-4 text-[11px] uppercase tracking-wide text-white/50">
-              Платформа
+              {t("nav.platform")}
             </div>
+
+            <NavLink
+              to={restaurant ? `/admin/r/${restaurant}/langs` : "/admin/platform/restaurants"}
+              className={({ isActive }) =>
+                `block rounded px-4 py-2 text-sm ${isActive ? "bg-white/10 font-medium" : "hover:bg-white/5"
+                }`
+              }
+              onClick={() => setSidebarOpen(false)}
+            >
+              {t("nav.langs")}
+            </NavLink>
+
             <NavLink
               to="/admin/platform/restaurants"
               className={({ isActive }) =>
@@ -362,7 +551,7 @@ export default function AdminShell() {
               }
               onClick={() => setSidebarOpen(false)}
             >
-              Ресторанти
+              {t("nav.restaurants")}
             </NavLink>
 
             <NavLink
@@ -373,7 +562,18 @@ export default function AdminShell() {
               }
               onClick={() => setSidebarOpen(false)}
             >
-              Профил
+              {t("admin.profile.my_profile")}
+            </NavLink>
+
+            <NavLink
+              to="/admin/platform/allergens"
+              className={({ isActive }) =>
+                `block rounded px-4 py-2 text-sm ${isActive ? "bg-white/10 font-medium" : "hover:bg-white/5"
+                }`
+              }
+              onClick={() => setSidebarOpen(false)}
+            >
+              {t("nav.platform_allergens")}
             </NavLink>
           </>
         )}
@@ -381,21 +581,25 @@ export default function AdminShell() {
     </>
   );
 
+  // ✅ Gate: avoid BG flash (don’t render UI until language is applied)
+if (!uiLangReady) {
+  return (
+    <div className="min-h-[60vh] grid place-items-center">
+      <div className="h-10 w-10 rounded-full border-4 border-gray-300 border-t-black animate-spin" />
+    </div>
+  );
+}
+
   return (
     <div className="min-h-screen flex bg-gray-50">
       {/* Off-canvas sidebar (mobile) */}
-      <div
-        className={`fixed inset-0 z-[60] lg:hidden ${sidebarOpen ? "" : "pointer-events-none"
-          }`}
-      >
-        {/* backdrop */}
+      <div className={`fixed inset-0 z-[60] lg:hidden ${sidebarOpen ? "" : "pointer-events-none"}`}>
         <div
           className={`absolute inset-0 bg-black/40 transition-opacity z-[60] ${sidebarOpen ? "opacity-100" : "opacity-0"
             }`}
           onClick={() => setSidebarOpen(false)}
           aria-hidden
         />
-        {/* panel */}
         <aside
           className={`absolute left-0 top-0 h-full w-72 bg-[#0f172a] text-white
                       transform transition-transform z-[80] pointer-events-auto
@@ -408,37 +612,40 @@ export default function AdminShell() {
         </aside>
       </div>
 
-      {/* Static sidebar (>= lg) */}
+      {/* Static sidebar */}
       <aside className="hidden lg:block w-64 bg-[#0f172a] text-white flex-shrink-0">
         {SidebarContent}
       </aside>
 
-      {/* Content column */}
+      {/* Content */}
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
         <header className="h-14 bg-white border-b flex items-center justify-between px-4">
           <div className="flex items-center gap-2">
-            {/* hamburger */}
             <button
               className="lg:hidden inline-flex h-9 w-9 items-center justify-center rounded-md border hover:bg-gray-50"
               onClick={() => setSidebarOpen(true)}
-              aria-label="Отвори меню"
+              aria-label={t("admin.shell.open_menu")}
             >
               <svg width="20" height="20" viewBox="0 0 24 24">
-                <path
-                  fill="currentColor"
-                  d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2"
-                />
+                <path fill="currentColor" d="M3 6h18v2H3V6m0 5h18v2H3v-2m0 5h18v2H3v-2" />
               </svg>
             </button>
-            <h1 className="text-lg font-semibold">Админ панел</h1>
           </div>
-          <button
-            onClick={() => setLogoutOpen(true)}
-            className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
-            title="Изход"
-          >
-            Изход
-          </button>
+
+          {/* Language + Logout (top-right) */}
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
+              {uiLangs.length > 1 ? <LanguageSwitcherFancy langs={uiLangs} /> : null}
+            </div>
+
+            <button
+              onClick={() => setLogoutOpen(true)}
+              className="rounded-lg border px-3 py-1.5 text-sm hover:bg-gray-50"
+              title={t("admin.shell.logout")}
+            >
+              {t("admin.shell.logout")}
+            </button>
+          </div>
         </header>
 
         <main className="p-4 lg:p-8 h-[calc(100vh-56px)] overflow-auto">
@@ -450,7 +657,7 @@ export default function AdminShell() {
       <Modal
         open={logoutOpen}
         onClose={() => setLogoutOpen(false)}
-        title="Излизане"
+        title={t("admin.shell.logout_title")}
         size="sm"
         footer={
           <div className="flex justify-end gap-2">
@@ -458,20 +665,16 @@ export default function AdminShell() {
               className="rounded border px-3 py-1.5 text-sm hover:bg-gray-50"
               onClick={() => setLogoutOpen(false)}
             >
-              Отказ
+              {t("admin.common.cancel")}
             </button>
-            <button
-              className="rounded bg-black text-white px-3 py-1.5 text-sm"
-              onClick={doLogout}
-            >
-              Излез
+
+            <button className="rounded bg-black text-white px-3 py-1.5 text-sm" onClick={doLogout}>
+              {t("admin.shell.logout")}
             </button>
           </div>
         }
       >
-        <div className="text-neutral-800">
-          Сигурни ли сте, че искате да излезете?
-        </div>
+        <div className="text-neutral-800">{t("admin.shell.logout_confirm")}</div>
       </Modal>
     </div>
   );

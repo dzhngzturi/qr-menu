@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import api from "../lib/api";
 import type { Category, Dish } from "../lib/types";
-import { bgnToEur, fmtBGN, fmtEUR } from "../lib/money";
+import { fmtEUR } from "../lib/money";
 import NotFound from "../pages/NotFound";
 import { MenuFooter } from "../components/MenuFooter";
 import {
@@ -11,30 +11,76 @@ import {
   logMenuOpenForSlug,
   logSearchDebounced,
 } from "../lib/telemetry";
+import { allergenIconUrl } from "../lib/allergenIcons";
 
 type Grouped = Record<number, Dish[]>;
 type Pill = "food" | "bar" | "allergens";
-type Allergen = { id: number; code: string; name: string; is_active?: boolean };
+
+type Allergen = {
+  id: number;
+  code: string;
+  name: string;
+  is_active?: boolean;
+  image_url?: string | null;
+};
+
+type DishAllergen = {
+  id: number;
+  code?: string | null;
+  name?: string | null;
+  image_url?: string | null;
+};
+
+type MenuConfig = {
+  ui?: { langs?: string[]; default?: string };
+  content?: { langs?: string[]; default?: string };
+};
 
 const WRAP = "mx-auto max-w-4xl px-4";
+
+function uniqLower(list: any[]): string[] {
+  return Array.from(
+    new Set((list ?? []).map((x) => String(x ?? "").trim().toLowerCase()))
+  ).filter(Boolean);
+}
 
 export default function AvvaMenu() {
   const { slug } = useParams<{ slug: string }>();
 
   const [cats, setCats] = useState<Category[]>([]);
   const [dishes, setDishes] = useState<Dish[]>([]);
-  const [loading, setLoading] = useState(true); // за категории+ястия
-  const [loadingAllergens, setLoadingAllergens] = useState(false); // само алергени
+  const [loading, setLoading] = useState(true);
+  const [loadingAllergens, setLoadingAllergens] = useState(false);
   const [notFound, setNotFound] = useState(false);
   const [query, setQuery] = useState("");
 
   const [sp, setSp] = useSearchParams();
   const initialPill = (sp.get("tab") as Pill) || "food";
   const [pill, setPill] = useState<Pill>(initialPill);
+
+  // ✅ multilingual (public)
+  const [cfg, setCfg] = useState<MenuConfig | null>(null);
+  const [langs, setLangs] = useState<string[]>([]);
+  const [lang, setLang] = useState<string>("bg");
+  const hasLangSwitcher = langs.length > 1;
+
   const [allergens, setAllergens] = useState<Allergen[]>([]);
   const [aQuery, setAQuery] = useState("");
 
   const [openedCatId, setOpenedCatId] = useState<number | null>(null);
+
+  /**
+   * ✅ FIX:
+   * Previously: openAllergenCode (string) => clicking A1 opened A1 everywhere.
+   * Now: openAllergen is scoped by (dishId, allergenId).
+   * - dishId = -1 is used for the Allergens TAB (table), i.e. not tied to any dish.
+   */
+  const [openAllergen, setOpenAllergen] = useState<{
+    dishId: number;
+    allergenId: number;
+  } | null>(null);
+
+  const hasAllergensTab = loadingAllergens || (allergens?.length ?? 0) > 0;
 
   const BRAND = {
     name: "AVVA Cafe-Grill-Bar",
@@ -58,26 +104,51 @@ export default function AvvaMenu() {
     return isiOS ? `maps://?q=${q}` : `https://maps.google.com/?q=${q}`;
   }
 
-  // ---------- ТЕЛЕМЕТРИЯ ----------
+  function portionLabel(d: Dish) {
+    const v = (d as any).portion_value as number | null | undefined;
+    const u = (d as any).portion_unit as string | null | undefined;
+    if (v == null || !u) return null;
+
+    const unit = String(u).toLowerCase().trim();
+    if (unit === "g") return `${v} гр`;
+    if (unit === "ml") return `${v} мл`;
+    return `${v} ${u}`;
+  }
+
+  function dishAllergens(d: Dish): DishAllergen[] {
+    const list = ((d as any).allergens ?? []) as DishAllergen[];
+    if (!Array.isArray(list)) return [];
+    return list
+      .map((a) => ({
+        ...a,
+        id: Number((a as any).id ?? 0),
+        code: a.code ? String(a.code).trim().toUpperCase() : null,
+        name: a.name ? String(a.name).trim() : null,
+        image_url: a.image_url ? String(a.image_url) : null,
+      }))
+      .filter((a) => (a.id ?? 0) > 0 && (!!a.code || !!a.name || !!a.image_url));
+  }
+
+  function allergenSrc(code?: string | null, backendUrl?: string | null) {
+    const local = allergenIconUrl(code);
+    if (local) return local;
+    if (backendUrl) return String(backendUrl);
+    return null;
+  }
+
   useEffect(() => {
     if (!slug) return;
-
-    // QR scan – веднъж на ден на устройство за този ресторант
     logQrScanOnceForSlug(slug);
-
-    // menu_open – при всяко зареждане на менюто
     logMenuOpenForSlug(slug);
   }, [slug]);
 
-  // Търсене – дебоунснато (ползва logSearchDebounced от telemetry.ts)
   useEffect(() => {
     if (!slug) return;
     const q = query.trim();
-    if (!q) return; // не логваме празно
-    logSearchDebounced(q, slug); // вътре има 2s debounce + min length 3
+    if (!q) return;
+    logSearchDebounced(q, slug);
   }, [query, slug]);
 
-  // sync tab (pill) с URL `?tab=`
   useEffect(() => {
     const next = new URLSearchParams(sp);
     next.set("tab", pill);
@@ -85,7 +156,63 @@ export default function AvvaMenu() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pill]);
 
-  // ---------- Зареждане на данни ----------
+  useEffect(() => {
+    if (!hasAllergensTab && pill === "allergens") setPill("food");
+  }, [hasAllergensTab, pill]);
+
+  // ✅ Load public config -> allowed langs -> initial lang
+  useEffect(() => {
+    if (!slug) return;
+
+    (async () => {
+      try {
+        const res = await api.get(`/menu/${slug}/config`);
+        const data: MenuConfig = res.data;
+
+        const uiLangs = uniqLower(data?.ui?.langs ?? []);
+        const contentLangs = uniqLower(data?.content?.langs ?? []);
+
+        // allowed = intersection(ui, content) when both exist; else fallback
+        let allowed: string[] = [];
+        if (uiLangs.length && contentLangs.length) {
+          allowed = uiLangs.filter((l) => contentLangs.includes(l));
+        }
+        if (!allowed.length) allowed = contentLangs.length ? contentLangs : uiLangs;
+
+        const uniqAllowed = Array.from(new Set(allowed)).filter(Boolean);
+
+        const def = String(data?.content?.default ?? data?.ui?.default ?? "bg")
+          .trim()
+          .toLowerCase();
+
+        const urlLang = String(sp.get("lang") ?? "").trim().toLowerCase();
+        const initial =
+          urlLang && uniqAllowed.includes(urlLang)
+            ? urlLang
+            : uniqAllowed.includes(def)
+              ? def
+              : uniqAllowed[0] || "bg";
+
+        setCfg(data);
+        setLangs(uniqAllowed.length ? uniqAllowed : ["bg"]);
+        setLang(initial);
+
+        // keep URL in sync only when multi-lang is enabled
+        if ((uniqAllowed.length || 0) > 1) {
+          const next = new URLSearchParams(sp);
+          next.set("lang", initial);
+          setSp(next, { replace: true });
+        }
+      } catch {
+        setCfg(null);
+        setLangs(["bg"]);
+        setLang("bg");
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug]);
+
+  // ✅ Fetch menu data (refetch on lang)
   useEffect(() => {
     if (!slug) {
       setNotFound(true);
@@ -93,13 +220,20 @@ export default function AvvaMenu() {
       return;
     }
 
-    // 1) Критично: категории + ястия
     setLoading(true);
     (async () => {
       try {
         const [cRes, dRes] = await Promise.all([
-          api.get("/categories?only_active=1&sort=position,name&per_page=-1"),
-          api.get("/dishes?only_active=1&sort=position,name&per_page=-1"),
+          api.get(
+            `/menu/${slug}/categories?only_active=1&sort=position,name&per_page=-1&lang=${encodeURIComponent(
+              lang
+            )}`
+          ),
+          api.get(
+            `/menu/${slug}/dishes?only_active=1&sort=position,name&per_page=-1&lang=${encodeURIComponent(
+              lang
+            )}`
+          ),
         ]);
 
         const catsData: Category[] = cRes.data.data ?? cRes.data;
@@ -119,16 +253,18 @@ export default function AvvaMenu() {
       }
     })();
 
-    // 2) Некритично: алергени (ако падне — игнорираме)
     setLoadingAllergens(true);
     api
-      .get("/allergens?only_active=1&per_page=-1")
+      .get(
+        `/menu/${slug}/allergens?only_active=1&per_page=-1&lang=${encodeURIComponent(
+          lang
+        )}`
+      )
       .then((aRes) => setAllergens(aRes.data.data ?? aRes.data))
       .catch(() => setAllergens([]))
       .finally(() => setLoadingAllergens(false));
-  }, [slug]);
+  }, [slug, lang]);
 
-  // групиране на ястията по категория
   const grouped: Grouped = useMemo(() => {
     const g: Grouped = {};
     for (const d of dishes) {
@@ -139,11 +275,9 @@ export default function AvvaMenu() {
     return g;
   }, [dishes]);
 
-  // helper за category_id от ястие
   const getDishCategoryId = (d: Dish) =>
     (d as any).category?.id ?? (d as any).category_id ?? null;
 
-  // ЛОГИКА ЗА BAR КАТЕГОРИИ
   const isBarCategory = (name: string) => {
     const n = name.toLowerCase();
     const keys = [
@@ -184,7 +318,6 @@ export default function AvvaMenu() {
     return keys.some((k) => n.includes(k));
   };
 
-  // кои категории имат поне едно ястие, съвпадащо с търсенето (по име/описание)
   const dishMatchCatIds = useMemo(() => {
     const s = query.trim().toLowerCase();
     const ids = new Set<number>();
@@ -200,7 +333,6 @@ export default function AvvaMenu() {
     return ids;
   }, [dishes, query]);
 
-  // При търсене: отваряме категорията на първото намерено ястие и сменяме таба при нужда
   useEffect(() => {
     const s = query.trim().toLowerCase();
     if (!s) return;
@@ -223,7 +355,7 @@ export default function AvvaMenu() {
 
     if (openedCatId !== cid) setOpenedCatId(cid);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query, dishes, cats]); // не включваме pill/openedCatId — ще се сетнат вътре ако трябва
+  }, [query, dishes, cats]);
 
   const tilesToShow: Category[] = useMemo(() => {
     let list = cats;
@@ -232,8 +364,6 @@ export default function AvvaMenu() {
     return list;
   }, [cats, pill]);
 
-  // без търсене → плочките според таба
-  // с търсене → показваме всички категории, които съвпадат по име ИЛИ имат съвпадащо ястие
   const filteredTiles: Category[] = useMemo(() => {
     const s = query.trim().toLowerCase();
     if (!s) return tilesToShow;
@@ -249,12 +379,45 @@ export default function AvvaMenu() {
     const q = aQuery.trim().toLowerCase();
     if (!q) return allergens;
     return allergens.filter(
-      (a) =>
-        a.code.toLowerCase().includes(q) || a.name.toLowerCase().includes(q)
+      (a) => a.code.toLowerCase().includes(q) || a.name.toLowerCase().includes(q)
     );
   }, [allergens, aQuery]);
 
+  // ✅ click outside -> close code badge
+  useEffect(() => {
+    const onDocClick = () => setOpenAllergen(null);
+    document.addEventListener("click", onDocClick, true); // capture
+    return () => document.removeEventListener("click", onDocClick, true);
+  }, []);
+
   if (notFound) return <NotFound />;
+
+  // ✅ shared classes for hover/tap effect
+  const ICON_WRAP =
+    "group relative inline-flex items-center justify-center rounded-xl bg-white border border-black/10 " +
+    "transition-transform duration-150 ease-out " +
+    "hover:scale-125 active:scale-150 " +
+    "hover:border-[#FFC107] hover:ring-2 hover:ring-[#FFC107]/80 hover:shadow-[0_0_18px_rgba(255,193,7,.55)]";
+
+  // ✅ badge shown on click (mobile-friendly)
+  const CODE_BADGE =
+    "pointer-events-none absolute -top-2 -right-2 z-50 " +
+    "rounded-md bg-black text-white text-[11px] font-bold " +
+    "px-1.5 py-0.5 shadow-lg border border-white/20";
+
+  // ✅ simple flag src mapping (expects /public/flags/bg.svg, de.svg, en.svg...)
+  const flagSrc = (l: string) => `/flags/${l}.svg`;
+
+  const isOpenAt = (dishId: number, allergenId: number) =>
+    openAllergen?.dishId === dishId && openAllergen?.allergenId === allergenId;
+
+  const toggleOpenAt = (dishId: number, allergenId: number) => {
+    setOpenAllergen((prev) =>
+      prev?.dishId === dishId && prev?.allergenId === allergenId
+        ? null
+        : { dishId, allergenId }
+    );
+  };
 
   return (
     <div
@@ -271,7 +434,6 @@ export default function AvvaMenu() {
       {/* COVER */}
       <div className={`${WRAP} pt-2 sm:pt-4`}>
         <div className="relative h-[140px] sm:h-[200px] rounded-2xl overflow-hidden border border-black shadow-sm">
-          {/* STICKY TOP BAR (само вътре в категория) */}
           {openedCatId !== null && (
             <div className="sticky top-0 z-40">
               <div className="border-b border-white/10">
@@ -302,20 +464,60 @@ export default function AvvaMenu() {
       {/* HEADER CARD */}
       <div className={`${WRAP} -mt-3 sm:-mt-6 lg:-mt-10 pt-3 sm:pt-4`}>
         <div className="rounded-2xl bg-white shadow-[0_10px_30px_rgba(0,0,0,.07)] border border-black p-3 md:p-6">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex items-start justify-between gap-4">
             <div className="flex items-center gap-3">
               {BRAND.logoUrl ? (
                 <img
                   src={BRAND.logoUrl}
                   className="h-10 w-10 rounded-full object-cover border"
+                  alt=""
                 />
               ) : null}
-              <h1
-                className="text-xl sm:text-2xl md:text-3xl font-bold"
-                style={{ color: BRAND.color.primary }}
-              >
-                {BRAND.name}
-              </h1>
+              <div>
+                <h1
+                  className="text-xl sm:text-2xl md:text-3xl font-bold"
+                  style={{ color: BRAND.color.primary }}
+                >
+                  {BRAND.name}
+                </h1>
+
+                {/* ✅ language flags */}
+                {hasLangSwitcher && (
+                  <div className="mt-2 flex items-center gap-2">
+                    {langs.map((l) => (
+                      <button
+                        key={l}
+                        type="button"
+                        onClick={() => {
+                          setLang(l);
+                          const next = new URLSearchParams(sp);
+                          next.set("lang", l);
+                          setSp(next, { replace: true });
+                        }}
+                        className={
+                          "h-9 w-9 rounded-full border border-black bg-white overflow-hidden flex items-center justify-center " +
+                          (lang === l ? "ring-2 ring-[#FFC107]" : "")
+                        }
+                        title={l.toUpperCase()}
+                        aria-label={`Switch language to ${l}`}
+                      >
+                        <img
+                          src={flagSrc(l)}
+                          alt={l}
+                          className="h-full w-full object-cover"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLImageElement).style.display =
+                              "none";
+                          }}
+                        />
+                        <span className="absolute text-[10px] font-bold text-black">
+                          {l.toUpperCase()}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -339,7 +541,6 @@ export default function AvvaMenu() {
             </a>
 
             <div className="flex items-center gap-2">
-              {/* Facebook (неутрален стил) */}
               {SOCIAL.facebook && (
                 <a
                   href={SOCIAL.facebook}
@@ -362,7 +563,6 @@ export default function AvvaMenu() {
                 </a>
               )}
 
-              {/* Instagram (неутрален стил) */}
               {SOCIAL.instagram && (
                 <a
                   href={SOCIAL.instagram}
@@ -392,7 +592,7 @@ export default function AvvaMenu() {
             {[
               { key: "food", label: "Food" },
               { key: "bar", label: "Bar" },
-              { key: "allergens", label: "Allergens" },
+              ...(hasAllergensTab ? [{ key: "allergens", label: "Allergens" }] : []),
             ].map((p) => (
               <button
                 key={p.key}
@@ -400,6 +600,7 @@ export default function AvvaMenu() {
                 onClick={() => {
                   setPill(p.key as Pill);
                   setOpenedCatId(null);
+                  setOpenAllergen(null);
                 }}
                 className={
                   "rounded-full px-3 py-1.5 text-sm transition border " +
@@ -425,9 +626,7 @@ export default function AvvaMenu() {
                 placeholder="Търсене в категории и ястия"
                 className="w-full rounded-full border border-black px-4 py-3 pr-11 outline-none focus:ring-2 focus:ring-[#FFC107]"
               />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2">
-                🔎
-              </span>
+              <span className="absolute right-3 top-1/2 -translate-y-1/2">🔎</span>
             </div>
           )}
         </div>
@@ -435,7 +634,7 @@ export default function AvvaMenu() {
 
       {/* --------- CONTENT --------- */}
       <main className={`${WRAP} pb-28 sm:pb-32`}>
-        {/* Allergens */}
+        {/* Allergens TAB */}
         {pill === "allergens" && (
           <div className="mt-6 rounded-2xl border border-black bg-white p-5">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
@@ -447,44 +646,69 @@ export default function AvvaMenu() {
                   placeholder="Търсене по код или име…"
                   className="w-full rounded-full border border-black px-4 py-2 pr-11 outline-none focus:ring-2 focus:ring-[#FFC107]"
                 />
-                <span className="absolute right-3 top-1/2 -translate-y-1/2">
-                  🔎
-                </span>
+                <span className="absolute right-3 top-1/2 -translate-y-1/2">🔎</span>
               </div>
             </div>
 
             {loadingAllergens ? (
-              <div className="py-10 text-center text-neutral-500">
-                Зареждане…
-              </div>
+              <div className="py-10 text-center text-neutral-500">Зареждане…</div>
             ) : filteredAllergens.length === 0 ? (
-              <div className="py-10 text-center text-neutral-500">
-                Няма алергени.
-              </div>
+              <div className="py-10 text-center text-neutral-500">Няма алергени.</div>
             ) : (
               <div className="overflow-x-auto rounded-lg border">
                 <table className="min-w-full text-sm">
                   <thead className="bg-neutral-50 text-neutral-700">
                     <tr>
+                      <th className="px-3 py-2 text-left w-20">Икона</th>
                       <th className="px-3 py-2 text-left w-28">Код</th>
                       <th className="px-3 py-2 text-left">Алерген</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredAllergens.map((a, i) => (
-                      <tr
-                        key={a.id}
-                        className={
-                          i % 2 === 0 ? "bg-white" : "bg-neutral-50/60"
-                        }
-                        title={`${a.code} — ${a.name}`}
-                      >
-                        <td className="px-3 py-2 font-semibold whitespace-nowrap">
-                          {a.code}
-                        </td>
-                        <td className="px-3 py-2 break-words">{a.name}</td>
-                      </tr>
-                    ))}
+                    {filteredAllergens.map((a, i) => {
+                      const code = String(a.code || "").trim().toUpperCase();
+                      const src = allergenSrc(code, a.image_url ?? null);
+
+                      const isOpen = isOpenAt(-1, a.id);
+
+                      return (
+                        <tr
+                          key={a.id}
+                          className={i % 2 === 0 ? "bg-white" : "bg-neutral-50/60"}
+                          title={`${a.code} — ${a.name}`}
+                        >
+                          <td className="px-3 py-2">
+                            {src ? (
+                              <button
+                                type="button"
+                                className={ICON_WRAP}
+                                title={code}
+                                aria-label={code}
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  toggleOpenAt(-1, a.id);
+                                }}
+                              >
+                                <img
+                                  src={src}
+                                  alt={code}
+                                  className="h-16 w-16 md:h-14 md:w-14 object-contain p-1"
+                                  loading="lazy"
+                                />
+                                {isOpen && <span className={CODE_BADGE}>{code}</span>}
+                              </button>
+                            ) : (
+                              <span className="text-neutral-400">—</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 font-semibold whitespace-nowrap">
+                            {a.code}
+                          </td>
+                          <td className="px-3 py-2 break-words">{a.name}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -496,14 +720,10 @@ export default function AvvaMenu() {
         {pill !== "allergens" && openedCatId === null && (
           <>
             {loading && (
-              <div className="py-10 text-center text-neutral-300">
-                Зареждане…
-              </div>
+              <div className="py-10 text-center text-neutral-300">Зареждане…</div>
             )}
             {!loading && filteredTiles.length === 0 && (
-              <div className="py-10 text-center text-neutral-300">
-                Няма категории.
-              </div>
+              <div className="py-10 text-center text-neutral-300">Няма категории.</div>
             )}
             {!loading &&
               filteredTiles.map((c) => (
@@ -527,8 +747,7 @@ export default function AvvaMenu() {
                     <span
                       className="text-white text-2xl md:text-[28px] font-bold tracking-wide"
                       style={{
-                        textShadow:
-                          "0 0 3px #000, 0 0 3px #000, 0 0 3px #000",
+                        textShadow: "0 0 3px #000, 0 0 3px #000, 0 0 3px #000",
                       }}
                     >
                       {c.name.toUpperCase()}
@@ -546,19 +765,61 @@ export default function AvvaMenu() {
             const c = cats.find((x) => x.id === openedCatId);
             let list = (c && grouped[c.id]) || [];
 
-            // филтър на ястията вътре в категория при търсене
             const s = query.trim().toLowerCase();
             if (s) {
               list = list.filter(
                 (d) =>
                   d.name.toLowerCase().includes(s) ||
-                  (d.description &&
-                    d.description.toLowerCase().includes(s))
+                  (d.description && d.description.toLowerCase().includes(s))
               );
             }
 
-            // Grid Layout за Food категории, List Layout за Bar/Drinks
             const isGridLayout = !isBarCategory(c?.name ?? "");
+
+            const AllergensIconsOnly = ({
+              dishId,
+              aList,
+            }: {
+              dishId: number;
+              aList: DishAllergen[];
+            }) => {
+              if (!aList.length) return null;
+
+              return (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {aList.map((a) => {
+                    const code = String(a.code || "").trim().toUpperCase();
+                    const src = allergenSrc(code, a.image_url ?? null);
+                    if (!src) return null;
+
+                    const isOpen = isOpenAt(dishId, a.id);
+
+                    return (
+                      <button
+                        key={`${dishId}-${a.id}`}
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          toggleOpenAt(dishId, a.id);
+                        }}
+                        className={ICON_WRAP}
+                        title={code || "allergen"}
+                        aria-label={code || "allergen"}
+                      >
+                        <img
+                          src={src}
+                          alt={code || "allergen"}
+                          className="h-10 w-10 sm:h-11 sm:w-11 md:h-12 md:w-12 object-contain p-1"
+                          loading="lazy"
+                        />
+                        {isOpen && <span className={CODE_BADGE}>{code}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            };
 
             return (
               <section className="mt-6">
@@ -574,97 +835,118 @@ export default function AvvaMenu() {
 
                 {isGridLayout ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {list.map((d) => (
-                      <article
-                        key={d.id}
-                        className="rounded-2xl overflow-hidden border border-black bg-white shadow-sm"
-                      >
-                        {d.image_url && (
-                          <div className="relative aspect-[16/9] w-full">
-                            <img
-                              src={d.image_url}
-                              alt={d.name}
-                              className="absolute inset-0 w-full h-full object-cover"
-                            />
-                          </div>
-                        )}
+                    {list.map((d) => {
+                      const pLabel = portionLabel(d);
+                      const aList = dishAllergens(d);
 
-                        <div className="p-4">
-                          <div className="flex items-start justify-between gap-3">
-                            <h3 className="text-lg md:text-xl font-semibold">
-                              {d.name}
-                            </h3>
-                            {!!d.price && (
-                              <div className="text-right text-sm font-semibold">
-                                <div className="text-[#FFC107]">
-                                  {fmtEUR.format(bgnToEur(d.price))}
+                      return (
+                        <article
+                          key={d.id}
+                          className="rounded-2xl overflow-hidden border border-black bg-white shadow-sm"
+                        >
+                          {d.image_url && (
+                            <div className="relative aspect-[16/9] w-full">
+                              <img
+                                src={d.image_url}
+                                alt={d.name}
+                                className="absolute inset-0 w-full h-full object-cover"
+                              />
+                            </div>
+                          )}
+
+                          <div className="p-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <h3 className="text-lg md:text-xl font-semibold">
+                                {d.name}
+                              </h3>
+                              {!!d.price && (
+                                <div className="text-right text-sm font-semibold">
+                                  <div className="text-[#FFC107]">
+                                    {fmtEUR.format(d.price)}
+                                  </div>
                                 </div>
-                                <div className="opacity-60">
-                                  ({fmtBGN.format(d.price)})
-                                </div>
+                              )}
+                            </div>
+
+                            {!!d.description && (
+                              <p className="text-sm text-neutral-700 mt-2">
+                                {d.description}
+                              </p>
+                            )}
+
+                            {pLabel && (
+                              <div className="mt-2 text-xs text-neutral-600">
+                                {pLabel}
+                              </div>
+                            )}
+
+                            <AllergensIconsOnly dishId={d.id} aList={aList} />
+
+                            {!d.is_active && (
+                              <div className="mt-2 text-xs uppercase text-neutral-500">
+                                недостъпно
                               </div>
                             )}
                           </div>
-
-                          {!!d.description && (
-                            <p className="text-sm text-neutral-700 mt-2">
-                              {d.description}
-                            </p>
-                          )}
-
-                          {!d.is_active && (
-                            <div className="mt-2 text-xs uppercase text-neutral-500">
-                              недостъпно
-                            </div>
-                          )}
-                        </div>
-                      </article>
-                    ))}
+                        </article>
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="rounded-2xl overflow-hidden border border-black bg-white">
                     <ul className="divide-y">
-                      {list.map((d) => (
-                        <li
-                          key={d.id}
-                          className="flex items-center gap-3 p-4"
-                        >
-                          {!!d.image_url && (
-                            <img
-                              src={d.image_url}
-                              className="h-16 w-16 rounded-xl object-cover border border-black"
-                              alt=""
-                            />
-                          )}
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <h3 className="text-[17px] font-medium">
-                                {d.name}
-                              </h3>
-                              {!d.is_active && (
-                                <span className="text-xs text-neutral-500 uppercase">
-                                  недостъпно
-                                </span>
+                      {list.map((d) => {
+                        const pLabel = portionLabel(d);
+                        const aList = dishAllergens(d);
+
+                        return (
+                          <li key={d.id} className="flex items-center gap-3 p-4">
+                            {!!d.image_url && (
+                              <img
+                                src={d.image_url}
+                                className="h-16 w-16 rounded-xl object-cover border border-black"
+                                alt=""
+                              />
+                            )}
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <h3 className="text-[17px] font-medium">
+                                  {d.name}
+                                </h3>
+                                {!d.is_active && (
+                                  <span className="text-xs text-neutral-500 uppercase">
+                                    недостъпно
+                                  </span>
+                                )}
+                              </div>
+
+                              {!!d.description && (
+                                <p className="text-sm text-neutral-600 mt-0.5">
+                                  {d.description}
+                                </p>
+                              )}
+
+                              {pLabel && (
+                                <div className="mt-1 text-xs text-neutral-600">
+                                  {pLabel}
+                                </div>
+                              )}
+
+                              {aList.length > 0 && (
+                                <AllergensIconsOnly dishId={d.id} aList={aList} />
                               )}
                             </div>
-                            {!!d.description && (
-                              <p className="text-sm text-neutral-600 mt-0.5">
-                                {d.description}
-                              </p>
+
+                            {!!d.price && (
+                              <div className="text-right text-sm font-semibold">
+                                <div className="text-[#FFC107]">
+                                  {fmtEUR.format(d.price)}
+                                </div>
+                              </div>
                             )}
-                          </div>
-                          {!!d.price && (
-                            <div className="text-right text-sm font-semibold">
-                              <div className="text-[#FFC107]">
-                                {fmtEUR.format(bgnToEur(d.price))}
-                              </div>
-                              <div className="opacity-60">
-                                ({fmtBGN.format(d.price)})
-                              </div>
-                            </div>
-                          )}
-                        </li>
-                      ))}
+                          </li>
+                        );
+                      })}
                     </ul>
                   </div>
                 )}

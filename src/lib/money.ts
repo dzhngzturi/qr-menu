@@ -1,9 +1,16 @@
 // src/lib/money.ts
-const EUR_RATE = 1.95583; // фиксиран курс
+// Prices are stored and served by the API in EUR.
 
-export function bgnToEur(bgn: number) {
-  return Math.round((Number(bgn || 0) / EUR_RATE) * 100) / 100;
+export function langToLocale(lang: string) {
+  const l = (lang || "").toLowerCase();
+  if (l.startsWith("bg")) return "bg-BG";
+  if (l.startsWith("tr")) return "tr-TR";
+  return "en-GB";
 }
 
-export const fmtBGN = new Intl.NumberFormat('bg-BG', { style: 'currency', currency: 'BGN' });
-export const fmtEUR = new Intl.NumberFormat('bg-BG', { style: 'currency', currency: 'EUR' });
+export const fmtEUR = new Intl.NumberFormat(undefined, {
+  style: "currency",
+  currency: "EUR",
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});

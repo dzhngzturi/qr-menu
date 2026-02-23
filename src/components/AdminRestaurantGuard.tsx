@@ -3,8 +3,9 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { apiAdmin } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
+import { useTranslation } from "react-i18next";
 
-function FullPageLoader({ text = "Проверка на достъп..." }: { text?: string }) {
+function FullPageLoader({ text }: { text: string }) {
   return (
     <div className="min-h-[60vh] grid place-items-center">
       <div className="flex flex-col items-center gap-3">
@@ -16,6 +17,7 @@ function FullPageLoader({ text = "Проверка на достъп..." }: { te
 }
 
 export default function AdminRestaurantGuard({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation();
   const { slug } = useParams<{ slug: string }>();
   const nav = useNavigate();
   const loc = useLocation();
@@ -33,14 +35,9 @@ export default function AdminRestaurantGuard({ children }: { children: React.Rea
       if (loading) return;
 
       // ✅ Ако НЕ е супер-админ и имаме "негов" restaurant в контекста:
-      // - ако някой ръчно напише друг slug -> или го пращаме към неговия, или NotFound (ти избираш)
+      // - ако някой ръчно напише друг slug -> NotFound (маскиране)
       if (!isAdmin && restaurant?.slug && restaurant.slug !== slug) {
-        // Вариант A: маскирай като NotFound
         nav("/not-found", { replace: true });
-
-        // Вариант B (ако предпочиташ): върни го към неговия ресторант
-        // nav(`/admin/r/${restaurant.slug}/categories`, { replace: true });
-
         return;
       }
 
@@ -89,7 +86,7 @@ export default function AdminRestaurantGuard({ children }: { children: React.Rea
   }, [slug, nav, loc.pathname, isAdmin, restaurant?.slug, loading]);
 
   if (loading || checking) {
-    return <FullPageLoader text="Проверка на достъп..." />;
+    return <FullPageLoader text={t("admin.common.checking_access")} />;
   }
 
   return <>{children}</>;

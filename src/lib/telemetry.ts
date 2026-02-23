@@ -3,100 +3,119 @@ import api from "./api";
 
 export type TelemetryType = "qr_scan" | "menu_open" | "search";
 
-/* ---------- КОИ РЕСТОРАНТИ ИМАТ ТЕЛЕМЕТРИЯ ---------- */
-// ✅ тук управляваш КЪДЕ да е включена телеметрията
-//    - добавяш slug-ове
-//    - махаш slug-ове
-const TELEMETRY_ALLOWED_SLUGS = ["eres","viva"]; // пример – промени според теб
+/* ---------- CONSENT ---------- */
+const CONSENT_COOKIE = "qr_consent"; // accepted | rejected
 
-export function isTelemetryEnabledForSlug(slug?: string | null) {
-  if (!slug) return false;
-  return TELEMETRY_ALLOWED_SLUGS.includes(slug);
+function getCookie(name: string): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(
+    new RegExp(
+      "(^| )" + name.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&") + "=([^;]+)"
+    )
+  );
+  return match ? decodeURIComponent(match[2]) : null;
+}
+
+export function hasTelemetryConsent(): boolean {
+  return getCookie(CONSENT_COOKIE) === "accepted";
+}
+
+export function setTelemetryConsent(value: "accepted" | "rejected") {
+  if (typeof document === "undefined") return;
+  const maxAge = 60 * 60 * 24 * 180;
+
+  // ✅ consent cookie (на домейна на FRONTEND-а)
+  // Няма да стигне до API домейна (cross-domain), затова ползваме header към API.
+  document.cookie = `${CONSENT_COOKIE}=${encodeURIComponent(
+    value
+  )}; Max-Age=${maxAge}; Path=/; SameSite=Lax`;
 }
 
 /* ---------- Session ID ---------- */
-function getSessionId(): string {
+function getSessionId(): string | null {
+  if (!hasTelemetryConsent()) return null;
+
   const KEY = "qrmenu_session_id";
   let id = localStorage.getItem(KEY);
   if (!id) {
-    id = crypto.randomUUID
-      ? crypto.randomUUID()
-      : Math.random().toString(36).slice(2);
+    id = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
     localStorage.setItem(KEY, id);
   }
   return id;
 }
 
-/* ---------- Основна функция за логване ---------- */
+/* ---------- Core ---------- */
 export async function logTelemetry(
   type: TelemetryType,
+  slug?: string | null,
   payload?: Record<string, unknown>
 ) {
+  // ✅ consent gate
+  if (!hasTelemetryConsent()) return;
+
+  // ✅ IMPORTANT: resolve.restaurant иска ?restaurant=slug
+  if (!slug) return;
+
+  const sessionId = getSessionId();
+  if (!sessionId) return;
+
   try {
-    await api.post("/telemetry", {
-      type,
-      occurred_at: new Date().toISOString(),
-      session_id: getSessionId(),
-      payload,
-    });
+    await api.post(
+      `/telemetry?restaurant=${encodeURIComponent(slug)}`,
+      {
+        type,
+        occurred_at: new Date().toISOString(),
+        session_id: sessionId,
+        payload: payload || null,
+      },
+      {
+        // ✅ cross-origin consent: backend middleware CheckTelemetryConsent го приема
+        headers: { "X-Telemetry-Consent": "accepted" },
+      }
+    );
   } catch (err) {
     console.warn("Telemetry error:", err);
   }
 }
 
-/* --------------------------------
-   QR SCAN – максимум 1 път НА ДЕН
-   за даден ресторант (slug) на това
-   устройство
---------------------------------- */
+/* ---------- QR SCAN (1x/day per device/browser) ---------- */
 export function logQrScanOnceForSlug(slug?: string | null) {
   try {
-    if (!isTelemetryEnabledForSlug(slug)) return; // ⬅️ ако е забранено – край
+    if (!hasTelemetryConsent()) return;
+    if (!slug) return;
 
-    const today = new Date().toISOString().slice(0, 10); // "YYYY-MM-DD"
-    const key = slug ? `qr_scan_last_${slug}` : "qr_scan_last_unknown";
+    const today = new Date().toISOString().slice(0, 10);
+    const key = `qr_scan_last_${slug}`;
 
     const last = localStorage.getItem(key);
-    if (last === today) return; // вече е логнато за днес
+    if (last === today) return;
 
     localStorage.setItem(key, today);
-    logTelemetry("qr_scan");
+    logTelemetry("qr_scan", slug);
   } catch (err) {
     console.warn("QR scan flag error:", err);
   }
 }
 
 /* ---------- MENU OPEN ---------- */
-
 export function logMenuOpenForSlug(slug?: string | null) {
-  if (!isTelemetryEnabledForSlug(slug)) return;
-  logTelemetry("menu_open");
+  if (!slug) return;
+  logTelemetry("menu_open", slug);
 }
 
-/* ------------------------------
-   SEARCH control
--------------------------------- */
-
-// последно изпратен термин (за да не пращаме едно и също)
+/* ---------- SEARCH ---------- */
 let lastSentTerm: string | null = null;
-// за debounce
 let debounceTimer: any = null;
 let lastInputTerm = "";
 
-/**
- * logSearchDebounced:
- *  ✔ праща събитие само ако потребителят е спрял да пише поне 2 секунди
- *  ✔ терминът е различен от последно изпратения
- *  ✔ терминът е поне 3 букви
- */
 export function logSearchDebounced(termRaw: string, slug?: string | null) {
-  if (!isTelemetryEnabledForSlug(slug)) return; // ⬅️ контрол по ресторант
+  if (!hasTelemetryConsent()) return;
+  if (!slug) return;
 
   const term = termRaw.trim().toLowerCase();
   lastInputTerm = term;
 
   if (debounceTimer) clearTimeout(debounceTimer);
-
   if (term.length < 3) return;
 
   debounceTimer = setTimeout(() => {
@@ -104,24 +123,19 @@ export function logSearchDebounced(termRaw: string, slug?: string | null) {
     if (term === lastSentTerm) return;
 
     lastSentTerm = term;
-    logTelemetry("search", { term });
+    logTelemetry("search", slug, { term });
   }, 2000);
 }
 
-/**
- * logSearchImmediate:
- *  – за изпращане при Enter / submit
- */
 export function logSearchImmediate(termRaw: string, slug?: string | null) {
-  if (!isTelemetryEnabledForSlug(slug)) return; // ⬅️ контрол по ресторант
+  if (!hasTelemetryConsent()) return;
+  if (!slug) return;
 
   const term = termRaw.trim().toLowerCase();
   if (!term || term.length < 3) return;
 
   if (term !== lastSentTerm) {
     lastSentTerm = term;
-    logTelemetry("search", { term });
+    logTelemetry("search", slug, { term });
   }
-
-  
 }

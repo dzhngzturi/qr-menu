@@ -3,17 +3,10 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useAuth } from "../context/AuthContext";
 import { useNavigate } from "react-router-dom";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import api from "../lib/api";
 
 const schema = z.object({ email: z.string().email(), password: z.string().min(1) });
-
-type LoginResp = {
-  token: string;
-  is_admin: boolean;
-  user: { id: number; name: string; email: string };
-  restaurant?: { id: number; slug: string; name: string } | null;
-};
 
 // ---------- локален lock по email ----------
 const lockKey = (email: string) => `login_lock:${email.toLowerCase()}`;
@@ -45,7 +38,6 @@ export default function Login() {
   } = useForm<{ email: string; password: string }>({ resolver: zodResolver(schema) });
 
   const emailVal = watch("email") || "";
-  useMemo(() => getLocalLockTs(emailVal), [emailVal]); // само да се преизчислява
 
   // тикер за countdown-а
   useEffect(() => {
@@ -64,10 +56,7 @@ export default function Login() {
 
     checkAndUpdate();
 
-    const id = setInterval(() => {
-      checkAndUpdate();
-    }, 1000);
-
+    const id = setInterval(checkAndUpdate, 1000);
     return () => clearInterval(id);
   }, [emailVal]);
 
@@ -83,36 +72,37 @@ export default function Login() {
       return;
     }
 
-    // ✅ важна част: махаме стария ресторант, за да няма "наследяване" от предишен логин
+    // ✅ махаме само ресторант slug (не е sensitive), за да няма "наследяване" от предишен логин
     localStorage.removeItem("restaurant_slug");
     localStorage.removeItem("restaurant");
 
+    // ❌ махаме legacy чувствителни ключове (ако са останали от стария flow)
+    localStorage.removeItem("token");
+    localStorage.removeItem("is_admin");
+    localStorage.removeItem("qrmenu_session_id");
+
     try {
-      const { is_admin, token } = (await login(v.email, v.password)) as LoginResp;
+      // ✅ cookie-based login (НЕ връща token)
+      await login(v.email, v.password);
 
-      // token header (ако AuthContext вече го сетва, това е harmless)
-      if (token) {
-        localStorage.setItem("token", token);
-        api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-      }
+      // ✅ след login взимаме истината от /auth/me
+      const me = await api.get("/auth/me");
+      const isAdmin = !!me.data?.is_admin;
 
-      localStorage.setItem("is_admin", String(!!is_admin));
-
-      if (is_admin) {
+      if (isAdmin) {
         nav("/admin/platform/restaurants", { replace: true });
         return;
       }
 
-      // ✅ НЕ разчитай на localStorage fallback. Вземи ресторанта от /auth/me (backend ти го връща)
-      const me = await api.get("/auth/me");
       const restaurant = me.data?.restaurant as { slug: string } | null | undefined;
-
       const slug = restaurant?.slug || "";
+
       if (!slug) {
         setErr("Потребителят няма асоцииран ресторант.");
         return;
       }
 
+      // ✅ restaurant_slug може да остане в localStorage
       localStorage.setItem("restaurant_slug", slug);
       localStorage.setItem("restaurant", slug);
 
@@ -124,12 +114,12 @@ export default function Login() {
       if (res?.status === 429) {
         const retryIn = Number(data?.retry_in || 0);
         const untilIso = data?.locked_until;
-        const untilTs = untilIso ? Date.parse(untilIso) : Date.now() + Math.max(1, retryIn) * 1000;
+        const untilTs2 = untilIso ? Date.parse(untilIso) : Date.now() + Math.max(1, retryIn) * 1000;
 
-        setLocalLockTs(emailVal, untilTs);
-        const leftMin = Math.max(1, Math.ceil((untilTs - Date.now()) / 60000));
+        setLocalLockTs(emailVal, untilTs2);
+        const leftMin = Math.max(1, Math.ceil((untilTs2 - Date.now()) / 60000));
         setErr(data?.message || `Акаунтът е временно заключен. Опитай след ~${leftMin} мин.`);
-        setCooldownLeft(Math.ceil((untilTs - Date.now()) / 1000));
+        setCooldownLeft(Math.ceil((untilTs2 - Date.now()) / 1000));
         return;
       }
 
@@ -162,7 +152,12 @@ export default function Login() {
 
   return (
     <div className="min-h-screen grid place-items-center">
-      <form onSubmit={onSubmit} className="w-full max-w-sm border rounded p-6 space-y-4 bg-white">
+      <form
+        id="login-form"
+        noValidate
+        onSubmit={onSubmit}
+        className="w-full max-w-sm border rounded p-6 space-y-4 bg-white"
+      >
         <h1 className="text-xl font-semibold">Админ вход</h1>
 
         {(err || cooldownLeft > 0) && (

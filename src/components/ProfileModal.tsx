@@ -14,58 +14,111 @@ type Form = {
 export default function ProfileModal({ onClose }: { onClose: () => void }) {
   const { user, updateProfile } = useAuth();
   const [saving, setSaving] = useState(false);
+
   const { register, handleSubmit } = useForm<Form>({
-    defaultValues: { name: user?.name, email: user?.email }
+    defaultValues: { name: user?.name, email: user?.email },
   });
 
   const ui = (
     <div className="fixed inset-0 z-[9999] grid place-items-center bg-black/40 p-4">
-      {/* ВАЖНО: даваме собствен клас и налагаме цвета локално */}
       <form
+        id="profile-modal-form"
         onSubmit={handleSubmit(async (v) => {
           setSaving(true);
-          try { await updateProfile(v); onClose(); }
-          finally { setSaving(false); }
+          try {
+            await updateProfile(v);
+            onClose();
+          } finally {
+            setSaving(false);
+          }
         })}
-        className="profile-modal-box w-full max-w-md rounded-xl bg-white p-5 space-y-3"
+        className="w-full max-w-md rounded-xl bg-white p-5 space-y-3"
       >
         <div className="text-lg font-semibold">Редакция на профил</div>
 
         <div>
-          <label className="block text-sm mb-1">Име</label>
-          <input className="w-full border rounded p-2" {...register("name")} />
-        </div>
-        <div>
-          <label className="block text-sm mb-1">Имейл</label>
-          <input className="w-full border rounded p-2" type="email" {...register("email")} />
+          <label className="block text-sm mb-1" htmlFor="profile-name">
+            Име
+          </label>
+          <input
+            id="profile-name"
+            className="w-full border rounded p-2"
+            autoComplete="name"
+            disabled={saving}
+            {...register("name")}
+          />
         </div>
 
-        <div className="pt-2 text-sm font-medium">Промяна на парола (по избор)</div>
         <div>
-          <label className="block text-sm mb-1">Нова парола</label>
-          <input className="w-full border rounded p-2" type="password" {...register("password")} />
+          <label className="block text-sm mb-1" htmlFor="profile-email">
+            Имейл
+          </label>
+          <input
+            id="profile-email"
+            className="w-full border rounded p-2"
+            type="email"
+            autoComplete="email"
+            disabled={saving}
+            {...register("email")}
+          />
         </div>
+
+        <div className="pt-2 text-sm font-medium">
+          Промяна на парола (по избор)
+        </div>
+
         <div>
-          <label className="block text-sm mb-1">Потвърди парола</label>
-          <input className="w-full border rounded p-2" type="password" {...register("password_confirmation")} />
+          <label className="block text-sm mb-1" htmlFor="profile-password">
+            Нова парола
+          </label>
+          <input
+            id="profile-password"
+            className="w-full border rounded p-2"
+            type="password"
+            autoComplete="new-password"
+            disabled={saving}
+            {...register("password")}
+          />
+        </div>
+
+        <div>
+          <label
+            className="block text-sm mb-1"
+            htmlFor="profile-password-confirmation"
+          >
+            Потвърди парола
+          </label>
+          <input
+            id="profile-password-confirmation"
+            className="w-full border rounded p-2"
+            type="password"
+            autoComplete="new-password"
+            disabled={saving}
+            {...register("password_confirmation")}
+          />
         </div>
 
         <div className="flex justify-end gap-2 pt-2">
-          <button type="button" onClick={onClose} className="rounded border px-3 py-1.5">Откажи</button>
-          <button disabled={saving} className="rounded bg-black text-white px-3 py-1.5">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded border px-3 py-1.5 hover:bg-gray-50"
+            disabled={saving}
+          >
+            Откажи
+          </button>
+
+          <button
+            disabled={saving}
+            className={[
+              "rounded bg-black text-white px-3 py-1.5",
+              saving ? "opacity-60 cursor-not-allowed" : "hover:bg-black/90",
+            ].join(" ")}
+          >
             {saving ? "Запис..." : "Запази"}
           </button>
         </div>
       </form>
-
-      {/* Локален стил с висока специфичност, за да „убие“ наследения бял цвят */}
-      <style>{`
-        .profile-modal-box, 
-        .profile-modal-box * {
-          color: #111 !important;
-        }
-        .profile-modal-box .text-white { color: #111 !important; }
-      `}</style>
     </div>
   );
 

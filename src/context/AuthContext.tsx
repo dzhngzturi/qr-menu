@@ -45,10 +45,13 @@ export const useAuth = () => useContext(Ctx);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(localStorage.getItem("token"));
-  const [isAdmin, setIsAdmin] = useState<boolean>(localStorage.getItem("is_admin") === "true");
+
+  // ✅ НЕ четем is_admin от localStorage
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+
   const [user, setUser] = useState<User | null>(null);
 
-  // ✅ много важно: ако имаш запазен slug, зареди го в state, за да не е null при първи render
+  // ✅ ако имаш запазен slug, зареди го в state, за да не е null при първи render
   const [restaurant, setRestaurant] = useState<RestaurantLite>(() => {
     const slug = localStorage.getItem("restaurant_slug") || localStorage.getItem("restaurant");
     return slug ? ({ id: 0, slug, name: "" } as any) : null;
@@ -101,7 +104,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       setUser(nextUser);
       setIsAdmin(nextIsAdmin);
-      localStorage.setItem("is_admin", String(nextIsAdmin));
+
+      // ❌ НЕ записваме is_admin в localStorage
+      // localStorage.setItem("is_admin", String(nextIsAdmin));
 
       // ✅ истината за restaurant идва от /auth/me
       persistRestaurant(nextRestaurant);
@@ -121,7 +126,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       applyToken(data.token);
 
-      // ⚠️ НЕ разчитаме на data.restaurant (при теб login() не го връща)
+      // ✅ (по желание) изчисти стар ключ, ако е останал от преди версии
+      localStorage.removeItem("is_admin");
+
       // 2) веднага sync с /auth/me за да вземем правилните is_admin + restaurant
       await refreshMe();
 
@@ -136,7 +143,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {}
 
     applyToken(null);
+
+    // ✅ чистим (legacy)
     localStorage.removeItem("is_admin");
+
     setIsAdmin(false);
     setUser(null);
     persistRestaurant(null);
@@ -152,6 +162,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       setLoading(true);
       try {
+        // ✅ ако има стар is_admin от преди, махни го още при старт
+        localStorage.removeItem("is_admin");
+
         if (token) {
           api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
           await refreshMe();

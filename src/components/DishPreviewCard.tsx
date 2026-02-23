@@ -1,11 +1,9 @@
 // src/components/DishPreviewCard.tsx
 import type { Dish } from "../lib/types";
-import { bgnToEur, fmtBGN, fmtEUR } from "../lib/money";
+import { fmtEUR } from "../lib/money";
 
 export default function DishPreviewCard({ dish }: { dish: Dish }) {
-  const hasPrice = typeof dish.price === "number" && dish.price > 0;
-  const priceBGN = hasPrice ? fmtBGN.format(dish.price) : null;
-  const priceEUR = hasPrice ? fmtEUR.format(bgnToEur(dish.price)) : null;
+  const hasPrice = typeof dish.price === "number" && dish.price > 0;  const priceEUR = hasPrice ? fmtEUR.format(dish.price) : null;
 
   return (
     <article className="text-neutral-900">
@@ -28,10 +26,9 @@ export default function DishPreviewCard({ dish }: { dish: Dish }) {
       </h3>
 
       {/* PRICE */}
-      {(priceBGN || priceEUR) && (
+      {priceEUR && (
         <div className="mt-1 text-sm md:text-[15px] font-medium text-neutral-600">
-          {priceBGN}
-          {priceEUR ? <span className="opacity-80"> | {priceEUR}</span> : null}
+          {priceEUR}
         </div>
       )}
 

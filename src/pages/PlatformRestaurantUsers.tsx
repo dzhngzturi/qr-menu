@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import api from "../lib/api";
+import { apiAdmin } from "../lib/api";
 import { toast } from "react-hot-toast";
 
 type Row = { id: number; name: string; email: string; role: string };
@@ -14,7 +14,7 @@ export default function PlatformRestaurantUsers() {
   async function load() {
     if (!id) return;
     setLoading(true);
-    const { data } = await api.get(`/platform/restaurants/${id}/users`);
+    const { data } = await apiAdmin.get(`platform/restaurants/${id}/users`);
     setRows(data);
     setLoading(false);
   }
@@ -24,7 +24,7 @@ export default function PlatformRestaurantUsers() {
   async function attach(e: React.FormEvent) {
     e.preventDefault();
     try {
-      await api.post(`/platform/restaurants/${id}/users`, {
+      await apiAdmin.post(`/platform/restaurants/${id}/users`, {
         email: form.email,
         password: form.password || undefined, // не пращаме празен стринг
         role: form.role,
@@ -41,7 +41,7 @@ export default function PlatformRestaurantUsers() {
   }
 
   async function detach(userId: number) {
-    await api.delete(`/platform/restaurants/${id}/users/${userId}`);
+    await apiAdmin.delete(`/platform/restaurants/${id}/users/${userId}`);
     toast.success("Премахнат потребител.");
     load();
   }

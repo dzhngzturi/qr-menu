@@ -1,9 +1,8 @@
-// src/public/PublicMenu.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import api from "../lib/api";
 import type { Category, Dish } from "../lib/types";
-import { bgnToEur, fmtBGN, fmtEUR } from "../lib/money";
+import { fmtEUR } from "../lib/money";
 import NotFound from "../pages/NotFound";
 import { MenuFooter } from "../components/MenuFooter";
 import {
@@ -12,17 +11,27 @@ import {
   logSearchDebounced,
   logSearchImmediate,
 } from "../lib/telemetry";
+import { useTranslation } from "react-i18next";
+
+import PublicLangSwitcherFlags from "./PublicLangSwitcherFlags";
+import { usePublicGate } from "../context/usePublicGate";
 
 type Grouped = Record<number, Dish[]>;
 
 export default function PublicMenu() {
+  const { t } = useTranslation();
   const { slug } = useParams<{ slug: string }>();
+
+  // ✅ single gate for ALL public pages
+  const gate = usePublicGate();
+  const canFetchMenu = gate.canFetch && !!slug;
+
   const [cats, setCats] = useState<Category[]>([]);
   const [dishes, setDishes] = useState<Dish[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+
   const [query, setQuery] = useState("");
   const [activeCat, setActiveCat] = useState<number | null>(null);
-  const [notFound, setNotFound] = useState(false);
   const heroUrl = "/cover.jpg";
 
   const ADDRESS = "ул. Васил Левски 115, 7400 Исперих";
@@ -33,70 +42,86 @@ export default function PublicMenu() {
     const q = encodeURIComponent(addr);
     const ua = navigator.userAgent || "";
     const isiOS = /iPad|iPhone|iPod|Macintosh/.test(ua);
-    return isiOS
-      ? `maps://?q=${q}`
-      : `https://www.google.com/maps/search/?api=1&query=${q}`;
+    return isiOS ? `maps://?q=${q}` : `https://www.google.com/maps/search/?api=1&query=${q}`;
   }
 
   const sectionRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
-  /* ---------- ТЕЛЕМЕТРИЯ ---------- */
-
-  // QR scan – веднъж на ден за този ресторант (по устройство) + menu_open всеки път
+  /* ---------- ТЕЛЕМЕТРИЯ (само ако ресторантът е валиден) ---------- */
   useEffect(() => {
-    if (!slug) return;
-    logQrScanOnceForSlug(slug);
+    if (!canFetchMenu) return;
+
+    logQrScanOnceForSlug(slug!);
     logTelemetry("menu_open");
-  }, [slug]);
+  }, [canFetchMenu, slug]);
 
-  // Търсене – debounce (логика вътре в telemetry.ts)
   useEffect(() => {
+    if (!canFetchMenu) return;
     const q = query.trim();
-    if (!slug || !q) return; // нужни са slug и непразно търсене
-    // вътре в telemetry.ts има 2s debounce + min length 3
-    logSearchDebounced(q, slug);
-  }, [query, slug]);
+    if (!q) return;
+    logSearchDebounced(q, slug!);
+  }, [query, canFetchMenu, slug]);
 
-  /* ---------- Зареждане на данни ---------- */
+  /* ---------- Зареждане на categories + dishes (само ако canFetchMenu) ---------- */
   useEffect(() => {
-    if (!slug) {
-      setNotFound(true);
+    if (!canFetchMenu) {
+      setCats([]);
+      setDishes([]);
+      setActiveCat(null);
       setLoading(false);
       return;
     }
 
+    let mounted = true;
+
     (async () => {
       try {
         setLoading(true);
-        setNotFound(false);
 
         const [cRes, dRes] = await Promise.all([
-          api.get("/categories?only_active=1&sort=position,name&per_page=-1"),
-          api.get("/dishes?only_active=1&sort=position,name&per_page=-1"),
+          api.get(`/menu/${slug}/categories`, {
+            params: {
+              lang: gate.lang,
+              only_active: 1,
+              sort: "position,name",
+              per_page: -1,
+            },
+          }),
+          api.get(`/menu/${slug}/dishes`, {
+            params: {
+              lang: gate.lang,
+              only_active: 1,
+              sort: "position,name",
+              per_page: -1,
+            },
+          }),
         ]);
 
+        if (!mounted) return;
+
         const catsData: Category[] = cRes.data.data ?? cRes.data;
-        const dishesData: Dish[] = (dRes.data.data ?? dRes.data).filter(
-          (d: Dish) => d.is_active
-        );
+        const dishesData: Dish[] = (dRes.data.data ?? dRes.data).filter((d: Dish) => d.is_active);
 
         const onlyActiveCats = catsData.filter((c) => c.is_active);
+
         setCats(onlyActiveCats);
         setDishes(dishesData);
         setActiveCat(onlyActiveCats.length ? onlyActiveCats[0].id : null);
-
-        if (!onlyActiveCats.length) setNotFound(true);
-
-        setLoading(false);
-      } catch (e: any) {
-        const status = e?.response?.status;
-        if (status === 404 || status === 422) setNotFound(true);
-        setLoading(false);
+      } catch {
+        if (!mounted) return;
+        setCats([]);
+        setDishes([]);
+        setActiveCat(null);
+      } finally {
+        if (mounted) setLoading(false);
       }
     })();
-  }, [slug]);
 
-  // групиране по категория
+    return () => {
+      mounted = false;
+    };
+  }, [canFetchMenu, slug, gate.lang]);
+
   const grouped: Grouped = useMemo(() => {
     const g: Grouped = {};
     for (const d of dishes) {
@@ -107,16 +132,15 @@ export default function PublicMenu() {
     return g;
   }, [dishes]);
 
-  // филтър по търсене
   const filteredGrouped: Grouped = useMemo(() => {
-    if (!query.trim()) return grouped;
-    const q = query.toLowerCase();
+    const s = query.trim();
+    if (!s) return grouped;
+
+    const q = s.toLowerCase();
     const res: Grouped = {};
     for (const [cidStr, arr] of Object.entries(grouped)) {
       const list = arr.filter(
-        (d) =>
-          d.name.toLowerCase().includes(q) ||
-          (d.description ?? "").toLowerCase().includes(q)
+        (d) => d.name.toLowerCase().includes(q) || (d.description ?? "").toLowerCase().includes(q)
       );
       if (list.length) res[Number(cidStr)] = list;
     }
@@ -129,7 +153,6 @@ export default function PublicMenu() {
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  // авто-подсветка на секцията при скрол
   useEffect(() => {
     if (!cats.length) return;
 
@@ -138,6 +161,7 @@ export default function PublicMenu() {
         const firstVisible = entries
           .filter((e) => e.isIntersecting)
           .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+
         if (firstVisible) {
           const idAttr = firstVisible.target.getAttribute("data-cid");
           if (idAttr) setActiveCat(Number(idAttr));
@@ -154,17 +178,18 @@ export default function PublicMenu() {
     return () => io.disconnect();
   }, [cats, filteredGrouped]);
 
-  if (notFound) return <NotFound />;
+  // ✅ Единствената “not found” логика идва от gate
+  if (gate.notFound) return <NotFound />;
+  if (!gate.loading && gate.error) return <NotFound />;
 
   return (
     <div className="min-h-screen bg-neutral-900 text-white">
-      {/* Хедър */}
-      <header className="bg-neutral-900/95  top-0 z-30 border-b border-white/10">
+      <header className="bg-neutral-900/95 top-0 z-30 border-b border-white/10">
         <div className="max-w-5xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <h1 className="text-2xl font-semibold tracking-wide">
-              VIVA bar&dinner
-            </h1>
+          <div className="flex items-center justify-between gap-3">
+            <h1 className="text-2xl font-semibold tracking-wide">VIVA bar&dinner</h1>
+
+            <PublicLangSwitcherFlags />
           </div>
 
           <div className="mt-2 text-sm text-white/70 flex flex-wrap gap-x-4 gap-y-1">
@@ -173,8 +198,8 @@ export default function PublicMenu() {
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1 hover:text-white hover:underline"
-              aria-label={`Отвори адреса в карти: ${ADDRESS}`}
-              title="Навигирай в карти"
+              title={t("public.navigate_title")}
+              aria-label={t("public.open_in_maps_aria", { address: ADDRESS })}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" className="opacity-70">
                 <path
@@ -190,8 +215,8 @@ export default function PublicMenu() {
             <a
               href={`tel:${PHONE_TEL}`}
               className="inline-flex items-center gap-1 hover:text-white hover:underline"
-              aria-label={`Обади се на ${PHONE_DISPLAY}`}
-              title="Обади се"
+              title={t("public.call_title")}
+              aria-label={t("public.call_aria", { phone: PHONE_DISPLAY })}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" className="opacity-70">
                 <path
@@ -203,7 +228,7 @@ export default function PublicMenu() {
             </a>
           </div>
 
-          {/* HERO банер */}
+          {/* HERO */}
           <div className="mt-3 relative rounded-2xl overflow-hidden h-40 md:h-52 border border-white/10">
             <div className="relative w-full h-[240px] md:h-[280px] lg:h-[320px] rounded-2xl border border-white/10 overflow-hidden">
               <img
@@ -217,7 +242,6 @@ export default function PublicMenu() {
 
             <div className="absolute inset-0 bg-black/40" />
             <div className="relative h-full flex flex-col justify-end">
-              {/* Pills */}
               <div className="p-3 md:p-4 flex gap-2 overflow-x-auto pb-2 no-scrollbar">
                 {cats.map((c) => (
                   <button
@@ -230,6 +254,7 @@ export default function PublicMenu() {
                         : "bg-black/40 text-white border-white/30 hover:bg-black/55")
                     }
                     title={c.name}
+                    disabled={!canFetchMenu}
                   >
                     {c.name}
                   </button>
@@ -238,44 +263,42 @@ export default function PublicMenu() {
             </div>
           </div>
 
-          {/* Търсачка */}
+          {/* Search */}
           <div className="mt-4 relative">
             <input
               id="menu_search"
               name="menu_search"
-              className="w-full bg-neutral-800/70 border border-white/10 rounded-xl py-3 pl-4 pr-10 outline-none focus:ring-2 focus:ring-white/20"
+              className="w-full bg-neutral-800/70 border border-white/10 rounded-xl py-3 pl-4 pr-10 outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-60"
               value={query}
-              onChange={(e) => {
-                setQuery(e.target.value); // само state, логиката за логване е в useEffect
-              }}
+              onChange={(e) => setQuery(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   e.preventDefault();
                   const q = query.trim();
-                  if (slug && q) {
-                    // моментално изпращане при Enter
-                    logSearchImmediate(q, slug);
-                  }
+                  if (canFetchMenu && q) logSearchImmediate(q, slug!);
                   e.currentTarget.blur();
                 }
               }}
-              placeholder="Търсене..."
+              placeholder={t("public.search_placeholder")}
+              disabled={!canFetchMenu}
             />
-
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40">
-              🔎
-            </span>
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40">🔎</span>
           </div>
         </div>
       </header>
 
-      {/* Секции */}
       <main className="max-w-5xl mx-auto px-4 pb-24">
-        {loading && (
-          <div className="py-10 text-center text-white/60">Зареждане…</div>
+        {gate.loading && (
+          <div className="py-10 text-center text-white/60">{t("public.loading")}</div>
         )}
 
-        {!loading &&
+        {!gate.loading && canFetchMenu && loading && (
+          <div className="py-10 text-center text-white/60">{t("public.loading")}</div>
+        )}
+
+        {!gate.loading &&
+          canFetchMenu &&
+          !loading &&
           cats.map((c) => {
             const list = filteredGrouped[c.id] ?? [];
             if (!list.length) return null;
@@ -292,11 +315,7 @@ export default function PublicMenu() {
                 <div className="rounded-2xl overflow-hidden bg-neutral-800/60 border border-white/10">
                   {c.image_url ? (
                     <div className="h-52 md:h-64 w-full relative">
-                      <img
-                        src={c.image_url}
-                        loading="lazy"
-                        className="h-full w-full object-cover"
-                      />
+                      <img src={c.image_url} loading="lazy" className="h-full w-full object-cover" />
                       <div className="absolute inset-0 bg-black/40" />
                       <div className="absolute inset-x-0 bottom-0 p-4">
                         <h2 className="text-2xl md:text-3xl font-bold drop-shadow">
@@ -306,58 +325,43 @@ export default function PublicMenu() {
                     </div>
                   ) : (
                     <div className="p-4">
-                      <h2 className="text-xl md:text-2xl font-bold">
-                        {c.name}
-                      </h2>
+                      <h2 className="text-xl md:text-2xl font-bold">{c.name}</h2>
                     </div>
                   )}
 
                   <ul className="divide-y divide-white/5">
                     {list.map((d) => (
-                      <li
-                        key={d.id}
-                        className="flex items-center gap-3 p-4 hover:bg-white/5 transition"
-                      >
+                      <li key={d.id} className="flex items-center gap-3 p-4 hover:bg-white/5 transition">
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
-                            <h3 className="text-[18px] font-medium">
-                              {d.name}
-                            </h3>
+                            <h3 className="text-[18px] font-medium">{d.name}</h3>
                             {!d.is_active && (
                               <span className="text-xs text-white/50 uppercase tracking-wide">
-                                недостъпно
+                                {t("public.unavailable")}
                               </span>
                             )}
                           </div>
+
                           {d.description && (
-                            <p className="text-sm text-white/70 mt-0.5">
-                              {d.description}
-                            </p>
+                            <p className="text-sm text-white/70 mt-0.5">{d.description}</p>
                           )}
 
                           {!!d.price && (
                             <div className="text-sm font-semibold mt-1">
-                              <div>{fmtEUR.format(bgnToEur(d.price))}</div>
-                              <div className="opacity-70">
-                                ({fmtBGN.format(d.price)})
-                              </div>
+                              <div>{fmtEUR.format(d.price)}</div>
                             </div>
                           )}
-
                         </div>
 
                         {d.image_url && (
                           <img
                             src={d.image_url}
                             className="h-16 w-16 rounded-xl object-cover border border-white/10"
+                            alt=""
                           />
                         )}
-                        <svg
-                          width="18"
-                          height="18"
-                          viewBox="0 0 24 24"
-                          className="text-white/30"
-                        >
+
+                        <svg width="18" height="18" viewBox="0 0 24 24" className="text-white/30">
                           <path fill="currentColor" d="M9 18l6-6-6-6" />
                         </svg>
                       </li>

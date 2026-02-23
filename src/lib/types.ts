@@ -1,9 +1,15 @@
 export type Dish = {
-  id: number; name: string; description?: string|null;
-  price: number; is_active: boolean; image_url?: string|null;
+  id: number; name: string; description?: string | null;
+  price: number; is_active: boolean; image_url?: string | null;
+  portion_value?: number | null; portion_unit?: "g" | "ml" | null;
+  allergens?: Allergen[];
   category: { id: number; name?: string };
 };
 
+export type CategoryTranslation = {
+lang: string;
+name: string;
+};
 
 export type Category = {
   id: number;
@@ -14,6 +20,10 @@ export type Category = {
   image_url?: string | null;
   dishes_count?: number;
   created_at?: string;
+
+  translations?: Record<string, {
+    name: string;
+  }>;
 };
 
 export type Paginated<T> = {
@@ -26,7 +36,25 @@ export type Paginated<T> = {
   };
 };
 
-export type Allergen = { id: number, code: string, name:string, is_active: boolean };
+export type AllergenTranslation = {
+  lang: string;
+  name: string;
+};
+
+export type Allergen = {
+  id: number;
+  code: string;
+  is_active: boolean;
+  position?: number;
+  image_url?: string | null;
+
+  // ✅ новата i18n структура (като backend)
+  translations: AllergenTranslation[];
+
+  // optional legacy (ако някъде още го показваш временно)
+  name?: string;
+};
+
 
 
 // ------------------ TELEMETRY ------------------
@@ -43,6 +71,14 @@ export type TelemetryTopSearch = {
   count: number;
 };
 
+export type TelemetryEventByHour = {
+  hour: number; // 0..23
+  qr_scan: number;
+  menu_open: number;
+  search: number;
+  all: number;
+};
+
 export type TelemetryOverview = {
   range: { from: string; to: string; days: number };
   totals: {
@@ -52,5 +88,6 @@ export type TelemetryOverview = {
     search: number;
   };
   events_by_day: TelemetryEventByDay[];
+  events_by_hour: TelemetryEventByHour[];   // ✅ ADD
   popular_searches: TelemetryTopSearch[];
 };

@@ -2,6 +2,31 @@
 import { apiAdmin } from "../lib/api";
 import type { Category, Paginated } from "../lib/types";
 
+export type CategoryTranslationInput = {
+  lang: string;
+  name: string;
+};
+
+export type CategoryUpsertPayload = {
+  name: string;
+  is_active: boolean;
+  image?: File;
+  translations?: CategoryTranslationInput[];
+};
+
+function appendTranslations(form: FormData, translations?: CategoryTranslationInput[]) {
+  if (!translations?.length) return;
+
+  translations.forEach((t, i) => {
+    const lang = String(t.lang || "").trim().toLowerCase();
+    const name = String(t.name || "").trim();
+    if (!lang || !name) return;
+
+    form.append(`translations[${i}][lang]`, lang);
+    form.append(`translations[${i}][name]`, name);
+  });
+}
+
 export async function fetchCategories(params?: {
   page?: number;
   sort?: string;
@@ -34,15 +59,13 @@ export async function fetchCategories(params?: {
   };
 }
 
-export async function createCategory(payload: {
-  name: string;
-  is_active: boolean;
-  image?: File;
-}) {
+export async function createCategory(payload: CategoryUpsertPayload) {
   const form = new FormData();
   form.append("name", payload.name);
   form.append("is_active", payload.is_active ? "1" : "0");
   if (payload.image) form.append("image", payload.image);
+
+  appendTranslations(form, payload.translations);
 
   const { data } = await apiAdmin.post<Category>("categories", form, {
     headers: { "Content-Type": "multipart/form-data" },
@@ -51,15 +74,19 @@ export async function createCategory(payload: {
   return data;
 }
 
-export async function updateCategory(
-  id: number,
-  payload: { name?: string; is_active?: boolean; image?: File }
-) {
+export async function updateCategory(id: number, payload: Partial<CategoryUpsertPayload>) {
   const form = new FormData();
+
   if (payload.name != null) form.append("name", payload.name);
   if (payload.is_active != null) form.append("is_active", payload.is_active ? "1" : "0");
   if (payload.image) form.append("image", payload.image);
 
+  // ако пратиш translations -> синкваме
+  if (payload.translations) {
+    appendTranslations(form, payload.translations);
+  }
+
+  // ти ползваш _method=PATCH (ок)
   const { data } = await apiAdmin.post<Category>(`categories/${id}?_method=PATCH`, form, {
     headers: { "Content-Type": "multipart/form-data" },
   });
