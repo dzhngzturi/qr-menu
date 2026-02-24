@@ -18,6 +18,15 @@ import { usePublicGate } from "../context/usePublicGate";
 
 type Grouped = Record<number, Dish[]>;
 
+/** ✅ Fixed rate: 1 EUR = 1.95583 BGN */
+const EUR_TO_BGN = 1.95583;
+
+/** ✅ Formatter for BGN */
+const fmtBGN = new Intl.NumberFormat("bg-BG", {
+  style: "currency",
+  currency: "BGN",
+});
+
 export default function PublicMenu() {
   const { t } = useTranslation();
   const { slug } = useParams<{ slug: string }>();
@@ -288,9 +297,7 @@ export default function PublicMenu() {
       </header>
 
       <main className="max-w-5xl mx-auto px-4 pb-24">
-        {gate.loading && (
-          <div className="py-10 text-center text-white/60">{t("public.loading")}</div>
-        )}
+        {gate.loading && <div className="py-10 text-center text-white/60">{t("public.loading")}</div>}
 
         {!gate.loading && canFetchMenu && loading && (
           <div className="py-10 text-center text-white/60">{t("public.loading")}</div>
@@ -348,7 +355,9 @@ export default function PublicMenu() {
 
                           {!!d.price && (
                             <div className="text-sm font-semibold mt-1">
-                              <div>{fmtEUR.format(d.price)}</div>
+                              <div>
+                                {fmtEUR.format(d.price)} / {fmtBGN.format(d.price * EUR_TO_BGN)}
+                              </div>
                             </div>
                           )}
                         </div>

@@ -51,6 +51,9 @@
 .tp-body {
   padding: 1.25rem;
   min-height: calc(100vh - 96px);
+
+  /* ✅ важно: място за footer-а (ако е sticky/fixed) */
+  padding-bottom: calc(160px + env(safe-area-inset-bottom));
 }
 
 @media (max-width: 560px) {
@@ -182,12 +185,14 @@
   margin: 0 0 1rem;
 }
 
-/* ---------- DISH CARDS GRID ---------- */
+/* ---------- DISH CARDS GRID (WHEN HAS IMAGES) ---------- */
 .tp-dish-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1rem;
-  align-items: start;
+
+  /* ✅ equal height items */
+  align-items: stretch;
 }
 
 @media (max-width: 900px) {
@@ -197,11 +202,17 @@
   .tp-dish-grid { grid-template-columns: 1fr; } /* ✅ mobile single */
 }
 
+/* ✅ CARD: equal height */
 .tp-dish-card {
   background: rgba(255,255,255,0.92);
   border-radius: 14px;
   overflow: hidden;
   box-shadow: 0 6px 16px rgba(0,0,0,0.18);
+
+  /* ✅ equal height */
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .tp-dish-card-imgbtn {
@@ -224,6 +235,11 @@
 .tp-dish-card-body {
   padding: 0.85rem 0.95rem 0.9rem;
   text-align: center;
+
+  /* ✅ makes price stick to bottom on equal-height cards */
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .tp-dish-card-title {
@@ -238,11 +254,20 @@
   line-height: 1.25;
 }
 
+/* keep meta centered but allow body to grow */
 .tp-dish-card-meta {
   margin-top: 0.55rem;
   display: grid;
   gap: 0.5rem;
   justify-items: center;
+}
+
+/* ✅ push price to bottom */
+.tp-dish-card-price {
+  margin-top: auto;
+  padding-top: 0.55rem;
+  font-weight: 900;
+  color: #1b8f3a;
 }
 
 .tp-portion {
@@ -292,11 +317,62 @@
   color: rgba(0,0,0,0.75);
 }
 
-/* ✅ green price */
-.tp-dish-card-price {
-  margin-top: 0.55rem;
+/* ---------- ✅ DISH ROWS (WHEN NO IMAGES) ---------- */
+.tp-dish-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* табличен ред като твоя screenshot */
+.tp-dish-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 14px;
+  padding: 14px 16px;
+
+  box-shadow: 0 6px 16px rgba(0,0,0,0.18);
+}
+
+.tp-dish-row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.tp-dish-row-name {
+  font-weight: 900;
+  color: #111;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+.tp-dish-row-sub {
+  margin-top: 4px;
+  font-size: 13px;
+  color: rgba(0,0,0,0.62);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tp-dish-row-dot { opacity: 0.5; }
+
+.tp-dish-row-price {
+  white-space: nowrap;
   font-weight: 900;
   color: #1b8f3a;
+}
+
+/* allergens in row mode */
+.tp-allergens--row {
+  justify-content: flex-start;
+  margin-top: 8px;
 }
 
 /* ---------- ALLERGENS PAGE ---------- */

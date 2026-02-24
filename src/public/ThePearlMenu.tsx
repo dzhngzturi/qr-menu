@@ -24,7 +24,7 @@ type DishAllergen = {
 };
 
 type AllergenMaster = {
-  id: number
+  id: number;
   code: string;
   name: string;
   image_url?: string | null;
@@ -39,9 +39,9 @@ type MenuConfig = {
 };
 
 function uniqLower(list: any[]): string[] {
-  return Array.from(
-    new Set((list ?? []).map((x) => String(x ?? "").trim().toLowerCase()))
-  ).filter(Boolean);
+  return Array.from(new Set((list ?? []).map((x) => String(x ?? "").trim().toLowerCase()))).filter(
+    Boolean
+  );
 }
 
 function normCode(code?: string | null) {
@@ -108,9 +108,7 @@ export default function ThePearlMenu() {
 
   // ✅ Allergens view
   const [view, setView] = useState<ViewMode>("menu");
-  const [selectedAllergenCode, setSelectedAllergenCode] = useState<string | null>(
-    null
-  );
+  const [selectedAllergenCode, setSelectedAllergenCode] = useState<string | null>(null);
 
   // ✅ Search (client-side) + debounce
   const [query, setQuery] = useState("");
@@ -165,11 +163,7 @@ export default function ThePearlMenu() {
         const uniqAllowed = Array.from(new Set(allowed)).filter(Boolean);
         const effectiveLangs = uniqAllowed.length ? uniqAllowed : ["bg"];
 
-        const def = String(
-          data?.content?.default ?? data?.ui?.default ?? "bg"
-        )
-          .trim()
-          .toLowerCase();
+        const def = String(data?.content?.default ?? data?.ui?.default ?? "bg").trim().toLowerCase();
 
         const urlLang =
           effectiveLangs.length > 1 ? String(sp.get("lang") ?? "").trim().toLowerCase() : "";
@@ -222,18 +216,12 @@ export default function ThePearlMenu() {
         setNotFound(false);
 
         const [cRes, dRes] = await Promise.all([
-          api.get(
-            `/menu/${slug}/categories?only_active=1&sort=position,name&per_page=-1${langQS}`
-          ),
-          api.get(
-            `/menu/${slug}/dishes?only_active=1&sort=position,name&per_page=-1${langQS}`
-          ),
+          api.get(`/menu/${slug}/categories?only_active=1&sort=position,name&per_page=-1${langQS}`),
+          api.get(`/menu/${slug}/dishes?only_active=1&sort=position,name&per_page=-1${langQS}`),
         ]);
 
         const catsData: Category[] = cRes.data.data ?? cRes.data;
-        const dishesData: Dish[] = (dRes.data.data ?? dRes.data).filter(
-          (d: Dish) => d.is_active
-        );
+        const dishesData: Dish[] = (dRes.data.data ?? dRes.data).filter((d: Dish) => d.is_active);
 
         // only categories that have dishes
         const dishCategoryIds = new Set<number>();
@@ -242,9 +230,7 @@ export default function ThePearlMenu() {
           if (cId) dishCategoryIds.add(cId);
         }
 
-        const onlyActiveCats = catsData.filter(
-          (c) => c.is_active && dishCategoryIds.has(c.id)
-        );
+        const onlyActiveCats = catsData.filter((c) => c.is_active && dishCategoryIds.has(c.id));
         setCats(onlyActiveCats);
         setDishes(dishesData);
 
@@ -328,6 +314,12 @@ export default function ThePearlMenu() {
     });
   }, [dishes, cidNum, debouncedQuery]);
 
+  // ✅ NEW: dish layout per текущите резултати
+  const dishLayout = useMemo<"grid" | "rows">(() => {
+    const anyWithImage = filteredCategoryDishes.some((d: any) => !!(d.image_url || null));
+    return anyWithImage ? "grid" : "rows";
+  }, [filteredCategoryDishes]);
+
   const filteredCatsForGrid = useMemo(() => {
     const q = debouncedQuery.trim().toLowerCase();
     if (q.length < 2) return cats;
@@ -367,7 +359,7 @@ export default function ThePearlMenu() {
   return (
     <div className="tp-page">
       <header className="tp-header">
-        {(cid || (!cid && view === "allergens")) ? (
+        {cid || (!cid && view === "allergens") ? (
           <button
             className="tp-back"
             onClick={() => {
@@ -407,7 +399,9 @@ export default function ThePearlMenu() {
                   borderRadius: 6,
                   overflow: "hidden",
                   border:
-                    l === lang ? "2px solid rgba(215,180,106,0.95)" : "1px solid rgba(255,255,255,.35)",
+                    l === lang
+                      ? "2px solid rgba(215,180,106,0.95)"
+                      : "1px solid rgba(255,255,255,.35)",
                   background: "rgba(0,0,0,.25)",
                   padding: 0,
                 }}
@@ -536,12 +530,68 @@ export default function ThePearlMenu() {
                   : "Няма продукти в тази категория."}
               </div>
             ) : (
-              <div className="tp-dish-grid">
+              <div className={dishLayout === "grid" ? "tp-dish-grid" : "tp-dish-list"}>
                 {filteredCategoryDishes.map((d: any) => {
                   const img = d.image_url || null;
                   const pLabel = portionLabel(d);
                   const aList = dishAllergens(d);
 
+                  // ✅ ROWS ONLY when layout is rows (no images in results)
+                  if (dishLayout === "rows") {
+                    return (
+                      <article key={d.id} className="tp-dish-row">
+                        <div className="tp-dish-row-main">
+                          <div className="tp-dish-row-name">{d.name}</div>
+
+                          {(pLabel || d.description) ? (
+                            <div className="tp-dish-row-sub">
+                              {pLabel ? <span className="tp-dish-row-portion">{pLabel}</span> : null}
+                              {pLabel && d.description ? <span className="tp-dish-row-dot">•</span> : null}
+                              {d.description ? <span className="tp-dish-row-desc">{d.description}</span> : null}
+                            </div>
+                          ) : null}
+
+                          {hasAllergens && aList.length > 0 ? (
+                            <div className="tp-allergens tp-allergens--row">
+                              {aList.map((a) => {
+                                const code = normCode(a.code);
+                                if (!code) return null;
+
+                                const src = allergenSrc(code, a.image_url ?? null);
+                                if (!src) return null;
+
+                                const isActive = activeAllergenKey === `${d.id}:${code}`;
+
+                                return (
+                                  <div key={`${d.id}:${a.id}:${code}`} className="tp-allergen">
+                                    <button
+                                      type="button"
+                                      onClick={() => showDishAllergenCode(d.id, code)}
+                                      className="tp-allergen-btn"
+                                      title={code}
+                                      aria-label={code}
+                                    >
+                                      <img src={src} alt={code} className="tp-allergen-icon" loading="lazy" />
+                                    </button>
+
+                                    {isActive ? (
+                                      <div className="tp-allergen-code">
+                                        <span>{code}</span>
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : null}
+                        </div>
+
+                        {!!d.price && <div className="tp-dish-row-price">{fmtEUR.format(d.price)}</div>}
+                      </article>
+                    );
+                  }
+
+                  // ✅ GRID/CARD layout
                   return (
                     <article key={d.id} className="tp-dish-card">
                       {img ? (
