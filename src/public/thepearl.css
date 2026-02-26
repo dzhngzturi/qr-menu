@@ -1,5 +1,8 @@
 /* src/public/thepearl.css */
 
+/* =======================================================================
+   BASE / PAGE
+   ======================================================================= */
 .tp-page {
   min-height: 100vh;
   background-image: url("/assets/thepearl/menu-bg.webp");
@@ -9,7 +12,9 @@
   font-family: "Open Sans", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
 }
 
-/* ---------- HEADER ---------- */
+/* =======================================================================
+   HEADER
+   ======================================================================= */
 .tp-header {
   position: sticky;
   top: 0;
@@ -42,38 +47,21 @@
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
+
 .tp-back:hover {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.65);
 }
 
-/* ---------- BODY ---------- */
-.tp-body {
-  padding: 1.25rem;
-  min-height: calc(100vh - 96px);
-
-  /* ✅ важно: място за footer-а (ако е sticky/fixed) */
-  padding-bottom: calc(160px + env(safe-area-inset-bottom));
-}
-
-@media (max-width: 560px) {
-  .tp-body { padding: 0.9rem; }
-}
-
-.tp-loading,
-.tp-empty {
-  color: rgba(255, 255, 255, 0.88);
-  text-align: center;
-  padding: 2rem 0;
-}
-
-/* ---------- SEARCH BAR (SOLID) ---------- */
+/* =======================================================================
+   SEARCH BAR (SOLID)
+   ======================================================================= */
 .tp-searchbar {
   position: sticky;
-  top: 96px; /* реално header-а ти е ~96px */
+  top: 96px; /* header height */
   z-index: 900;
   padding: 10px 14px 12px;
-  background: #121212; /* ✅ solid */
+  background: #121212;
   border-bottom: 1px solid rgba(255, 255, 255, 0.10);
 }
 
@@ -87,14 +75,19 @@
   width: 100%;
   border-radius: 999px;
   border: 1px solid rgba(255, 255, 255, 0.18);
-  background: #1b1b1b; /* ✅ solid */
+  background: #1b1b1b;
   color: #fff;
   padding: 12px 44px 12px 16px;
   outline: none;
 }
 
-.tp-searchinput::placeholder { color: rgba(255, 255, 255, 0.65); }
-.tp-searchinput:focus { border-color: rgba(255, 255, 255, 0.45); }
+.tp-searchinput::placeholder {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.tp-searchinput:focus {
+  border-color: rgba(255, 255, 255, 0.45);
+}
 
 .tp-searchicon,
 .tp-searchclear {
@@ -128,17 +121,39 @@
   font-size: 14px;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
+
 .tp-tab:hover {
   background: #222;
   border-color: rgba(255, 255, 255, 0.35);
 }
+
 .tp-tab.is-active {
   background: rgba(255, 255, 255, 0.92);
   color: #111;
   border-color: rgba(255, 255, 255, 0.92);
 }
 
-/* ---------- CATEGORIES GRID ---------- */
+/* =======================================================================
+   BODY / COMMON STATES
+   ======================================================================= */
+.tp-body {
+  padding: 1.25rem;
+  min-height: calc(100vh - 96px);
+
+  /* ✅ space for FIXED footer */
+  padding-bottom: calc(160px + env(safe-area-inset-bottom));
+}
+
+.tp-loading,
+.tp-empty {
+  color: rgba(255, 255, 255, 0.88);
+  text-align: center;
+  padding: 2rem 0;
+}
+
+/* =======================================================================
+   CATEGORIES GRID
+   ======================================================================= */
 .tp-cat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -153,11 +168,14 @@
   cursor: pointer;
   background-size: cover;
   background-position: center;
-  box-shadow: 0 6px 16px rgba(0,0,0,0.22);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.22);
   position: relative;
   transition: transform 0.18s ease;
 }
-.tp-cat-card:hover { transform: scale(1.02); }
+
+.tp-cat-card:hover {
+  transform: scale(1.02);
+}
 
 .tp-cat-title {
   position: absolute;
@@ -167,11 +185,13 @@
   text-align: left;
   font-size: 1.15rem;
   font-weight: 900;
-  background: rgba(0,0,0,0.55);
+  background: rgba(0, 0, 0, 0.55);
   color: #fff;
 }
 
-/* ---------- CATEGORY VIEW ---------- */
+/* =======================================================================
+   CATEGORY VIEW
+   ======================================================================= */
 .tp-category-view {
   max-width: 980px;
   margin: 0 auto;
@@ -185,31 +205,22 @@
   margin: 0 0 1rem;
 }
 
-/* ---------- DISH CARDS GRID (WHEN HAS IMAGES) ---------- */
+/* =======================================================================
+   DISH CARDS GRID (WHEN HAS IMAGES)
+   ======================================================================= */
 .tp-dish-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1rem;
-
-  /* ✅ equal height items */
-  align-items: stretch;
+  align-items: stretch; /* equal height items */
 }
 
-@media (max-width: 900px) {
-  .tp-dish-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@media (max-width: 560px) {
-  .tp-dish-grid { grid-template-columns: 1fr; } /* ✅ mobile single */
-}
-
-/* ✅ CARD: equal height */
+/* card (equal height) */
 .tp-dish-card {
-  background: rgba(255,255,255,0.92);
+  background: rgba(255, 255, 255, 0.92);
   border-radius: 14px;
   overflow: hidden;
-  box-shadow: 0 6px 16px rgba(0,0,0,0.18);
-
-  /* ✅ equal height */
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -235,8 +246,6 @@
 .tp-dish-card-body {
   padding: 0.85rem 0.95rem 0.9rem;
   text-align: center;
-
-  /* ✅ makes price stick to bottom on equal-height cards */
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -249,12 +258,11 @@
 
 .tp-dish-card-desc {
   margin-top: 0.35rem;
-  color: rgba(0,0,0,0.70);
+  color: rgba(0, 0, 0, 0.70);
   font-size: 0.95rem;
   line-height: 1.25;
 }
 
-/* keep meta centered but allow body to grow */
 .tp-dish-card-meta {
   margin-top: 0.55rem;
   display: grid;
@@ -262,7 +270,6 @@
   justify-items: center;
 }
 
-/* ✅ push price to bottom */
 .tp-dish-card-price {
   margin-top: auto;
   padding-top: 0.55rem;
@@ -272,7 +279,7 @@
 
 .tp-portion {
   font-size: 0.85rem;
-  color: rgba(0,0,0,0.75);
+  color: rgba(0, 0, 0, 0.75);
 }
 
 /* allergens icons row under dish */
@@ -283,25 +290,28 @@
   gap: 0.45rem;
 }
 
-.tp-allergen { position: relative; }
+.tp-allergen {
+  position: relative;
+}
 
 .tp-allergen-btn {
   height: 44px;
   width: 44px;
   border-radius: 999px;
-  border: 1px solid rgba(0,0,0,0.12);
+  border: 1px solid rgba(0, 0, 0, 0.12);
   background: #fff;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.10);
   transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
 }
+
 .tp-allergen-btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 8px 16px rgba(0,0,0,0.14);
-  border-color: rgba(0,0,0,0.18);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.14);
+  border-color: rgba(0, 0, 0, 0.18);
 }
 
 .tp-allergen-icon {
@@ -314,30 +324,29 @@
   margin-top: 6px;
   font-size: 11px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-  color: rgba(0,0,0,0.75);
+  color: rgba(0, 0, 0, 0.75);
 }
 
-/* ---------- ✅ DISH ROWS (WHEN NO IMAGES) ---------- */
+/* =======================================================================
+   DISH ROWS (WHEN NO IMAGES)
+   ======================================================================= */
 .tp-dish-list {
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
 
-/* табличен ред като твоя screenshot */
 .tp-dish-row {
   width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-
   background: rgba(255, 255, 255, 0.92);
   border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: 14px;
   padding: 14px 16px;
-
-  box-shadow: 0 6px 16px rgba(0,0,0,0.18);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
 }
 
 .tp-dish-row-main {
@@ -355,13 +364,15 @@
 .tp-dish-row-sub {
   margin-top: 4px;
   font-size: 13px;
-  color: rgba(0,0,0,0.62);
+  color: rgba(0, 0, 0, 0.62);
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
-.tp-dish-row-dot { opacity: 0.5; }
+.tp-dish-row-dot {
+  opacity: 0.5;
+}
 
 .tp-dish-row-price {
   white-space: nowrap;
@@ -375,7 +386,9 @@
   margin-top: 8px;
 }
 
-/* ---------- ALLERGENS PAGE ---------- */
+/* =======================================================================
+   ALLERGENS PAGE
+   ======================================================================= */
 .tp-allergens-page {
   max-width: 980px;
   margin: 0 auto;
@@ -396,13 +409,13 @@
 }
 
 .tp-allergens-hint {
-  color: rgba(255,255,255,0.75);
+  color: rgba(255, 255, 255, 0.75);
   font-size: 12px;
 }
 
 .tp-allergens-selected {
   color: #111;
-  background: rgba(255,255,255,0.92);
+  background: rgba(255, 255, 255, 0.92);
   border-radius: 999px;
   padding: 6px 10px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
@@ -416,10 +429,10 @@
 
 .tp-allergen-row {
   width: 100%;
-  border: 1px solid rgba(0,0,0,0.06);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   border-radius: 14px;
-  background: rgba(255,255,255,0.92);
-  box-shadow: 0 6px 16px rgba(0,0,0,0.18);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
   padding: 10px 12px;
   display: grid;
   grid-template-columns: 70px 1fr;
@@ -431,9 +444,9 @@
 
 .tp-allergen-row:hover {
   transform: translateY(-1px);
-  box-shadow: 0 10px 22px rgba(0,0,0,0.22);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.22);
   background: #ffffff;
-  border-color: rgba(0,0,0,0.12);
+  border-color: rgba(0, 0, 0, 0.12);
 }
 
 .tp-allergen-row.is-selected {
@@ -465,20 +478,22 @@
 .tp-allergen-row-code {
   margin-top: 2px;
   font-size: 12px;
-  color: rgba(0,0,0,0.65);
+  color: rgba(0, 0, 0, 0.65);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 }
 
 .tp-allergen-row.is-selected .tp-allergen-row-code {
-  color: rgba(15,81,50,0.80);
+  color: rgba(15, 81, 50, 0.80);
 }
 
-/* ---------- LIGHTBOX ---------- */
+/* =======================================================================
+   LIGHTBOX
+   ======================================================================= */
 .tp-lightbox {
   position: fixed;
   inset: 0;
   z-index: 2000;
-  background: rgba(0,0,0,0.72);
+  background: rgba(0, 0, 0, 0.72);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -490,5 +505,34 @@
   max-height: 90vh;
   border-radius: 14px;
   object-fit: contain;
-  box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+}
+
+/* =======================================================================
+   FOOTER (safe-area helper)
+   NOTE: applies only if your footer element has class "tp-footer"
+   ======================================================================= */
+.tp-footer {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* =======================================================================
+   RESPONSIVE
+   ======================================================================= */
+@media (max-width: 900px) {
+  .tp-dish-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .tp-body {
+    padding: 0.9rem;
+    /* keep bottom space for fixed footer */
+    padding-bottom: calc(160px + env(safe-area-inset-bottom));
+  }
+
+  .tp-dish-grid {
+    grid-template-columns: 1fr;
+  }
 }

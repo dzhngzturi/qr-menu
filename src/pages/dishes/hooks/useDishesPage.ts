@@ -196,7 +196,7 @@ export function useDishesPage() {
           category_id: query.category_id,
           search: query.search,
         }),
-        fetchCategories({ only_active: 1, sort: "position,name", page: 1 }),
+        fetchCategories({ only_active: 1, sort: "position,name", per_page: -1 }),
         fetchAllergens({ per_page: -1, only_active: 1, sort: "position,code" } as any),
       ]);
 

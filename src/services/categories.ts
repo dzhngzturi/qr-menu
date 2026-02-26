@@ -11,6 +11,7 @@ export type CategoryUpsertPayload = {
   name: string;
   is_active: boolean;
   image?: File;
+  remove_image?: boolean; // ✅ NEW
   translations?: CategoryTranslationInput[];
 };
 
@@ -31,7 +32,7 @@ export async function fetchCategories(params?: {
   page?: number;
   sort?: string;
   only_active?: 0 | 1;
-  per_page?: number; // optional
+  per_page?: number;
 }) {
   const q = new URLSearchParams();
   if (params?.page) q.set("page", String(params.page));
@@ -43,10 +44,8 @@ export async function fetchCategories(params?: {
     `categories${q.toString() ? `?${q.toString()}` : ""}`
   );
 
-  // ако бекендът връща пагинация:
   if ((data as Paginated<Category>)?.data) return data as Paginated<Category>;
 
-  // иначе plain масив
   const arr = data as Category[];
   return {
     data: arr,
@@ -65,6 +64,9 @@ export async function createCategory(payload: CategoryUpsertPayload) {
   form.append("is_active", payload.is_active ? "1" : "0");
   if (payload.image) form.append("image", payload.image);
 
+  // ✅ NEW (не е задължително при create, но не пречи)
+  if (payload.remove_image) form.append("remove_image", "1");
+
   appendTranslations(form, payload.translations);
 
   const { data } = await apiAdmin.post<Category>("categories", form, {
@@ -81,12 +83,13 @@ export async function updateCategory(id: number, payload: Partial<CategoryUpsert
   if (payload.is_active != null) form.append("is_active", payload.is_active ? "1" : "0");
   if (payload.image) form.append("image", payload.image);
 
-  // ако пратиш translations -> синкваме
+  // ✅ NEW: delete image flag
+  if (payload.remove_image) form.append("remove_image", "1");
+
   if (payload.translations) {
     appendTranslations(form, payload.translations);
   }
 
-  // ти ползваш _method=PATCH (ок)
   const { data } = await apiAdmin.post<Category>(`categories/${id}?_method=PATCH`, form, {
     headers: { "Content-Type": "multipart/form-data" },
   });
